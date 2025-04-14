@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -19,6 +19,8 @@ type Mensaje struct {
 type Paquete struct {
 	Valores []string `json:"valores"`
 }
+
+var Logger *slog.Logger
 
 /*
 func LeerConsola() {
@@ -76,13 +78,17 @@ func EnviarPaquete(ip string, puerto int, direccion string, paquete Paquete) {
 	log.Printf("respuesta del servidor: %s", resp.Status)
 }
 
-func ConfigurarLogger(pathLogger string) {
-	logFile, err := os.OpenFile(pathLogger, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+func ConfigurarLogger(nombreArchivo string) {
+	archivo, err := os.Create(nombreArchivo)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
-	mw := io.MultiWriter(os.Stdout, logFile)
-	log.SetOutput(mw)
+
+	Logger = slog.New(slog.NewTextHandler(archivo, &slog.HandlerOptions{
+		Level: slog.LevelDebug, // Nivel de log configurable si se desea
+	}))
+
+	Logger.Info("Logger inicializado para " + nombreArchivo)
 }
 
 func ObtenerIPLocal() (string, error) {

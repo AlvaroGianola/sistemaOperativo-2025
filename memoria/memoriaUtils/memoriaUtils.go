@@ -2,31 +2,19 @@ package memoriaUtils
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"os"
+
+	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
+	globalsmemoria "github.com/sisoputnfrba/tp-golang/memoria/globalsMemoria"
 )
 
-type Config struct {
-	PortMemory     int    `json:"port_memory"`
-	MemorySize     int    `json:"memory_size"`
-	PageSize       int    `json:"page_size"`
-	EntriesPerPage int    `json:"entries_per_page"`
-	NumberOfLevels int    `json:"number_of_levels"`
-	MemoryDelay    int    `json:"memory_delay"`
-	SwapfilePath   string `json:"swapfile_path"`
-	SwapDelay      int    `json:"swap_delay"`
-	LogLevel       string `json:"log_level"`
-	DumpPath       string `json:"dump_path"`
-}
-
-var MemoriaConfig *Config
-
-func IniciarConfiguracion(filePath string) *Config {
-	var config *Config
+// Inicia la configuración leyendo el archivo JSON correspondiente
+func IniciarConfiguracion(filePath string) *globalsmemoria.Config {
+	var config *globalsmemoria.Config
 	configFile, err := os.Open(filePath)
 	if err != nil {
-		log.Fatal(err.Error())
+		panic(err.Error())
 	}
 	defer configFile.Close()
 
@@ -36,6 +24,17 @@ func IniciarConfiguracion(filePath string) *Config {
 	return config
 }
 
-func RecibirPeticionCpu(w http.ResponseWriter, r *http.Request)
 
-func RecibirPeticionKernel(w http.ResponseWriter, r *http.Request)
+// RecibirPeticionCpu es el endpoint para recibir mensajes de CPU
+// Por ahora solo responde 200 OK y loguea la llegada 
+func RecibirPeticionCpu(w http.ResponseWriter, r *http.Request){
+	clientUtils.Logger.Info("[Memoria] Petición recibida desde CPU")
+	w.WriteHeader(http.StatusOK)
+}
+
+// RecibirPeticionKernel es el endpoint para recibir mensajes del Kernel
+// Por ahora solo responde 200 OK y loguea la llegada
+func RecibirPeticionKernel(w http.ResponseWriter, r *http.Request){
+	clientUtils.Logger.Info("[Memoria] Petición recibida desde Kernel")
+	w.WriteHeader(http.StatusOK)
+}

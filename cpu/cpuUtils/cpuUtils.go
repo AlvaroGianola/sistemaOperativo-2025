@@ -3,32 +3,18 @@ package cpuUtils
 import (
 	"encoding/json"
 	"log"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
-
+	globalsCpu	"github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
-	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
 
-type Config struct {
-	PortCpu         int    `json:"port_cpu"`
-	IpMemory        string `json:"ip_memory"`
-	PortMemory      int    `json:"port_memory"`
-	IpKernel        string `json:"ip_kernel"`
-	PortKernel      int    `json:"port_kernel"`
-	TlbEntries      int    `json:"tlb_entries"`
-	TlbReplacement  string `json:"tlb_replacement"`
-	CacheEntries    int    `json:"cache_entries"`
-	CacheReplacment string `json:"cache_replacement"`
-	CacheDelay      int    `json:"cache_delay"`
-	LogLevel        string `json:"log_level"`
-}
-
-var CpuConfig *Config
-
-func IniciarConfiguracion(filePath string) *Config {
-	var config *Config
+// Inicializa la configuración leyendo el archivo json indicado
+func IniciarConfiguracion(filePath string) *globalsCpu.Config{
+	var config *globalsCpu.Config
 	configFile, err := os.Open(filePath)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -41,46 +27,66 @@ func IniciarConfiguracion(filePath string) *Config {
 	return config
 }
 
+// Representa un proceso con su PID y su Program Counter (PC)
 type Proceso struct {
 	Pid int `json:"pid"`
 	Pc  int `json:"pc"`
 }
 
+// Recibe un proceso del Kernel y lo loguea
 func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 
-	var paqueteRecibido serverUtils.Paquete = serverUtils.RecibirPaquetes(w, r)
-	pid, err1 := strconv.Atoi(paqueteRecibido.Valores[0])
-	if err1 != nil {
-		log.Printf("Error al convertir pid a int")
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error leyendo body: %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	pc, err2 := strconv.Atoi(paqueteRecibido.Valores[1])
-	if err2 != nil {
-		log.Printf("Error al convertir pc a int")
+	defer r.Body.Close()
+
+	var datos Proceso
+	err = json.Unmarshal(body, &datos)
+	if err != nil {
+		log.Printf("Error parseando JSON: %s", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	var nuevoProceso Proceso = Proceso{pid, pc}
-	handleProceso(nuevoProceso)
+
+	// Log obligatorio simulado: FETCH
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - FETCH - Program Counter: %d", datos.Pid, datos.Pc))
+	w.WriteHeader(http.StatusOK)
 }
 
+// Envia handshake al Kernel con IP y puerto de esta CPU
 func EnviarHandshakeAKernel() {
 
 	ipCpu, err := clientUtils.ObtenerIPLocal()
 	if err != nil {
-		log.Printf("Error al obtener ip de la CPU")
+		log.Printf("Error obteniendo IP local para handshake")
 		return
 	}
 
-	puertoCpu := strconv.Itoa(CpuConfig.PortCpu)
+	puertoCpu := strconv.Itoa(globalsCpu.CpuConfig.PortCpu)
 
 	valores := []string{ipCpu, puertoCpu}
 
-	clientUtils.GenerarYEnviarPaquete(valores, CpuConfig.IpKernel, CpuConfig.PortKernel, "cpus") //IP y Puerto de la CPU
+	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "cpus") //IP y Puerto de la CPU
 
 }
 
+// handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
+// Por ahora queda como placeholder para mantener la estructura modular
 func handleProceso(proceso Proceso) {
-
+    // Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
+    // Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
+    // Esto ayuda a mantener la arquitectura limpia y predecible
 }
 
-func RecibirInterrupcion(w http.ResponseWriter, r *http.Request)
+// Simula la recepción de una interrupción
+func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {
+	clientUtils.Logger.Info("## Llega interrupción al puerto Interrupt")
+	w.WriteHeader(http.StatusOK)
+}
+
+
+

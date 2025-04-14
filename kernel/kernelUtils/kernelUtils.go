@@ -2,32 +2,21 @@ package kernelUtils
 
 import (
 	"encoding/json"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 
+	globalsKernel "github.com/sisoputnfrba/tp-golang/kernel/globalsKernel"
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
+	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
-type Config struct {
-	IpMemory           string `json:"ip_memory"`
-	PortMemory         int    `json:"port_memory"`
-	PortKernel         int    `json:"port_kernel"`
-	SchedulerAlgorithm string `json:"scheduler_algorithm"`
-	NewAlgorithm       string `json:"new_algorithm"`
-	Alpha              string `json:"alpha"`
-	SuspensionTime     int    `json:"suspension_time"`
-	LogLevel           string `json:"log_level"`
-}
-
-var KernelConfig *Config
-
-func IniciarConfiguracion(filePath string) *Config {
-	var config *Config
+func IniciarConfiguracion(filePath string) *globalsKernel.Config {
+	var config *globalsKernel.Config
 	configFile, err := os.Open(filePath)
 	if err != nil {
-		log.Fatal(err.Error())
+		panic(err.Error())
 	}
 	defer configFile.Close()
 
@@ -37,6 +26,7 @@ func IniciarConfiguracion(filePath string) *Config {
 	return config
 }
 
+// Estructura para representar CPUs e IOs conectados al Kernel
 type Cpu struct {
 	Ip     string `json:"ip"`
 	Puerto int    `json:"puerto"`
@@ -48,35 +38,60 @@ type Io struct {
 	Puerto int
 }
 
+// Listas globales para almacenar las CPUs e IOs conectadas
 var cpusRegistradas []Cpu
 var iosRegistradas []Io
 
-// handshake
+// RegistrarCpu maneja el handshake de una CPU
+// Espera recibir un JSON con formato ["ip", "puerto"]
 func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 
-	var paqueteRecibido serverUtils.Paquete = serverUtils.RecibirPaquetes(w, r)
-	puerto, err := strconv.Atoi(paqueteRecibido.Valores[1])
+	paquete := serverUtils.RecibirPaquetes(w, r)
+
+	puerto, err := strconv.Atoi(paquete.Valores[1])
 	if err != nil {
-		log.Printf("Error al convertir paquete recibido a string")
+		clientUtils.Logger.Info("Error al parsear puerto de CPU")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	var nuevaCpu Cpu = Cpu{paqueteRecibido.Valores[0], puerto}
+
+	nuevaCpu := Cpu{
+		Ip:     paquete.Valores[0],
+		Puerto: puerto,
+	}
+
 	cpusRegistradas = append(cpusRegistradas, nuevaCpu)
-	log.Printf("CPU registrada: %+v", nuevaCpu)
+	clientUtils.Logger.Info(fmt.Sprintf("CPU registrada: %+v", nuevaCpu))
+	w.WriteHeader(http.StatusOK)
 }
 
-func ResultadoProcesos(w http.ResponseWriter, r *http.Request)
+// ResultadoProcesos es un endpoint placeholder para futuras devoluciones de la CPU
+func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
+	clientUtils.Logger.Info("Recibido resultado de proceso (placeholder Checkpoint 1)")
+	w.WriteHeader(http.StatusOK)
+}
 
+
+// RegistrarIo maneja el handshake de una IO
+// Espera recibir un JSON con formato ["nombre", "ip", "puerto"]
 func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 
-	var paqueteRecibido serverUtils.Paquete = serverUtils.RecibirPaquetes(w, r)
-	puerto, err := strconv.Atoi(paqueteRecibido.Valores[2])
+	paquete := serverUtils.RecibirPaquetes(w, r)
+
+	puerto, err := strconv.Atoi(paquete.Valores[2])
 	if err != nil {
-		log.Printf("Error al convertir el puerto del paquete recibido a int")
+		clientUtils.Logger.Info("Error al parsear puerto de IO")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	var nuevaIo Io = Io{paqueteRecibido.Valores[0], paqueteRecibido.Valores[1], puerto}
+	nuevaIo := Io{
+		Nombre: paquete.Valores[0],
+		Ip:     paquete.Valores[1],
+		Puerto: puerto,
+	}
+
 	iosRegistradas = append(iosRegistradas, nuevaIo)
-	//log.Print("IO registrada %+v", nuevaIo)
+	clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %+v", nuevaIo))
+	w.WriteHeader(http.StatusOK)
 }
