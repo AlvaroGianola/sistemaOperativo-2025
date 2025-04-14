@@ -36,13 +36,13 @@ func LeerConsola() {
 	GenerarYEnviarPaquete(valores)
 }*/
 
-func GenerarYEnviarPaquete(valores []string, ip string, puerto int) {
+func GenerarYEnviarPaquete(valores []string, ip string, puerto int, direccion string) {
 	// Leemos y cargamos el paquete
 	paquete := Paquete{Valores: valores}
 
 	log.Printf("paqute a enviar: %+v", paquete)
 	// Enviamos el paqute
-	EnviarPaquete(ip, puerto, paquete)
+	EnviarPaquete(ip, puerto, direccion, paquete)
 }
 
 func EnviarMensaje(ip string, puerto int, mensajeTxt string) {
@@ -61,13 +61,13 @@ func EnviarMensaje(ip string, puerto int, mensajeTxt string) {
 	log.Printf("respuesta del servidor: %s", resp.Status)
 }
 
-func EnviarPaquete(ip string, puerto int, paquete Paquete) {
+func EnviarPaquete(ip string, puerto int, direccion string, paquete Paquete) {
 	body, err := json.Marshal(paquete)
 	if err != nil {
 		log.Printf("error codificando mensajes: %s", err.Error())
 	}
 
-	url := fmt.Sprintf("http://%s:%d/paquetes", ip, puerto)
+	url := fmt.Sprintf("http://%s:%d/%s", ip, puerto, direccion)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		log.Printf("error enviando mensajes a ip:%s puerto:%d", ip, puerto)

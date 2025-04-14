@@ -75,7 +75,7 @@ func EnviarHandshakeAKernel() {
 
 	valores := []string{ipCpu, puertoCpu}
 
-	clientUtils.GenerarYEnviarPaquete(valores, CpuConfig.IpKernel, CpuConfig.PortKernel) //IP y Puerto de la CPU
+	clientUtils.GenerarYEnviarPaquete(valores, CpuConfig.IpKernel, CpuConfig.PortKernel, "cpus") //IP y Puerto de la CPU
 
 }
 

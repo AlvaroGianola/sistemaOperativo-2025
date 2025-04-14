@@ -13,13 +13,12 @@ func main() {
 
 	ioUtils.IoConfig = ioUtils.IniciarConfiguracion("config.json")
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/recibirPeticion", ioUtils.RecibirPeticion)
-
 	args := os.Args
 	nombre := args[1]
 	ioUtils.EnviarHandshakeAKernel(nombre)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/recibirPeticion", ioUtils.RecibirPeticion)
 
 	err := http.ListenAndServe(":8080", mux)
 	if err != nil {
