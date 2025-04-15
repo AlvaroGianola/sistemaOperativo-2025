@@ -8,8 +8,8 @@ import (
 	"strconv"
 
 	globalsKernel "github.com/sisoputnfrba/tp-golang/kernel/globalsKernel"
-	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
+	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
 
 func IniciarConfiguracion(filePath string) *globalsKernel.Config {
@@ -51,7 +51,7 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 	puerto, err := strconv.Atoi(paquete.Valores[1])
 	if err != nil {
 		clientUtils.Logger.Info("Error al parsear puerto de CPU")
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
@@ -62,7 +62,6 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 
 	cpusRegistradas = append(cpusRegistradas, nuevaCpu)
 	clientUtils.Logger.Info(fmt.Sprintf("CPU registrada: %+v", nuevaCpu))
-	w.WriteHeader(http.StatusOK)
 }
 
 // ResultadoProcesos es un endpoint placeholder para futuras devoluciones de la CPU
@@ -70,7 +69,6 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("Recibido resultado de proceso (placeholder Checkpoint 1)")
 	w.WriteHeader(http.StatusOK)
 }
-
 
 // RegistrarIo maneja el handshake de una IO
 // Espera recibir un JSON con formato ["nombre", "ip", "puerto"]
@@ -81,7 +79,7 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 	puerto, err := strconv.Atoi(paquete.Valores[2])
 	if err != nil {
 		clientUtils.Logger.Info("Error al parsear puerto de IO")
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
@@ -93,5 +91,4 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 
 	iosRegistradas = append(iosRegistradas, nuevaIo)
 	clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %+v", nuevaIo))
-	w.WriteHeader(http.StatusOK)
 }
