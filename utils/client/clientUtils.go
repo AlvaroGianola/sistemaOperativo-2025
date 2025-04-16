@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 )
 
 type Mensaje struct {
@@ -91,13 +92,24 @@ func ConfigurarLogger(nombreArchivo string) {
 	Logger.Info("Logger inicializado para " + nombreArchivo)
 }
 
-func ObtenerIPLocal() (string, error) {
-	conn, err := net.Dial("udp", "8.8.8.8:80") // No se conecta, solo sirve para obtener la IP local usada
-	if err != nil {
-		return "", err
-	}
-	defer conn.Close()
+// Busca el primer puerto disponible a partir de un puerto base
+func EncontrarPuertoDisponible(ip string, puertoInicial int) (int, error) {
+	puerto := puertoInicial
+	for {
+		addr := ip + ":" + strconv.Itoa(puerto)
 
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-	return localAddr.IP.String(), nil
+		// Intentamos escuchar en esa dirección
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			// Si da error, ese puerto está ocupado, pasamos al siguiente
+			puerto++
+			continue
+		}
+
+		// Si llegamos acá, el puerto está libre → lo liberamos
+		_ = ln.Close()
+
+		// Devolvemos ese puerto como disponible
+		return puerto, nil
+	}
 }

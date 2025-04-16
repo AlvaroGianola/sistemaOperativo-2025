@@ -30,7 +30,7 @@ func main() {
 	mux.HandleFunc("/ios", kernelUtils.RegistrarIo)
 
 	// Levanta el servidor en el puerto definido en el archivo de configuración
-	direccion := fmt.Sprintf(":%d", globalsKernel.KernelConfig.PortKernel)
+	direccion := fmt.Sprintf("%s:%d", globalsKernel.KernelConfig.IpKernel, globalsKernel.KernelConfig.PortKernel)
 	fmt.Printf("[Kernel] Servidor HTTP escuchando en puerto %d...\n", globalsKernel.KernelConfig.PortKernel)
 
 	err := http.ListenAndServe(direccion, mux)
@@ -38,4 +38,3 @@ func main() {
 		panic(err)
 	}
 }
-

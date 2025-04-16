@@ -29,7 +29,6 @@ func IniciarConfiguracion(filePath string) *ioGlobalUtils.Config {
 	return config
 }
 
-
 func RecibirPeticion(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -38,7 +37,7 @@ func RecibirPeticion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-defer r.Body.Close()
+	defer r.Body.Close()
 
 	type RequestIO struct {
 		PID    int `json:"pid"`
@@ -66,19 +65,11 @@ defer r.Body.Close()
 }
 
 // Envía un handshake al Kernel informando el nombre del IO, su IP local y puerto en el que se levanta
-func EnviarHandshakeAKernel(nombre string) {
-	ipIO, err := clientUtils.ObtenerIPLocal()
-	if err != nil {
-		log.Printf("Error al obtener ip de la Io")
-		return
-	}
+func EnviarHandshakeAKernel(nombre string, puertoIo int) {
 
-	puertoIo := strconv.Itoa(ioGlobalUtils.IoConfig.PortIO)
+	valores := []string{nombre, ioGlobalUtils.IoConfig.IPIo, strconv.Itoa(puertoIo)}
 
-	valores := []string{nombre, ipIO, puertoIo}
-
-	// El último parámetro "ios" representa el tipo de paquete
-	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PuertoKernel, "ios") //IP y Puerto de la CPU
+	// El último parámetro "ios" representa el end point
+	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, "ios") //IP y Puerto de la CPU
 
 }
-

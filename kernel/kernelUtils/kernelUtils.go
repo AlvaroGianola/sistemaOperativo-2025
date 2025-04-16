@@ -28,8 +28,9 @@ func IniciarConfiguracion(filePath string) *globalsKernel.Config {
 
 // Estructura para representar CPUs e IOs conectados al Kernel
 type Cpu struct {
-	Ip     string `json:"ip"`
-	Puerto int    `json:"puerto"`
+	Indentificador string `json:"identificador"`
+	Ip             string `json:"ip"`
+	Puerto         int    `json:"puerto"`
 }
 
 type Io struct {
@@ -48,7 +49,7 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 
 	paquete := serverUtils.RecibirPaquetes(w, r)
 
-	puerto, err := strconv.Atoi(paquete.Valores[1])
+	puerto, err := strconv.Atoi(paquete.Valores[2])
 	if err != nil {
 		clientUtils.Logger.Info("Error al parsear puerto de CPU")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -56,8 +57,9 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nuevaCpu := Cpu{
-		Ip:     paquete.Valores[0],
-		Puerto: puerto,
+		Indentificador: paquete.Valores[0],
+		Ip:             paquete.Valores[1],
+		Puerto:         puerto,
 	}
 
 	cpusRegistradas = append(cpusRegistradas, nuevaCpu)

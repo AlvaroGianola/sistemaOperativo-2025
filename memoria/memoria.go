@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
+	globalsMemoria "github.com/sisoputnfrba/tp-golang/memoria/globalsMemoria"
 	memoriaUtils "github.com/sisoputnfrba/tp-golang/memoria/memoriaUtils"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
-	globalsMemoria "github.com/sisoputnfrba/tp-golang/memoria/globalsMemoria"
 )
 
 func main() {
@@ -20,12 +20,15 @@ func main() {
 	// Crea el multiplexer HTTP y registra los endpoints que usará Memoria
 	mux := http.NewServeMux()
 
-	// Endpoints que reciben peticiones desde CPU y Kernel
-	mux.HandleFunc("/cpu", memoriaUtils.RecibirPeticionCpu)
-	mux.HandleFunc("/kernel", memoriaUtils.RecibirPeticionKernel)
+	// Endpoints que reciben peticiones desde Kernel
+	mux.HandleFunc("/iniciarProceso", memoriaUtils.InciarProceso)
+	mux.HandleFunc("/finalizarProceso", memoriaUtils.FinalizarProceso)
+
+	// Endpoints que reciben peticiones desde CPU
+	mux.HandleFunc("/siguienteInstruccion", memoriaUtils.SiguienteInstruccion)
 
 	// Levanta el servidor en el puerto definido por configuración
-	direccion := fmt.Sprintf(":%d", globalsMemoria.MemoriaConfig.PortMemory)
+	direccion := fmt.Sprintf("%s:%d", globalsMemoria.MemoriaConfig.IpMemory, globalsMemoria.MemoriaConfig.PortMemory)
 	fmt.Printf("[Memoria] Servidor escuchando en puerto %d...\n", globalsMemoria.MemoriaConfig.PortMemory)
 
 	err := http.ListenAndServe(direccion, mux)

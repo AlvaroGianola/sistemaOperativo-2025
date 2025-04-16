@@ -1,9 +1,10 @@
 {
     "port_cpu": 8004,
+    "ip_cpu": "127.0.0.1",
     "ip_memory": "127.0.0.1",
     "port_memory": 8002,
     "ip_kernel": "127.0.0.1",
-    "port_kernel": 8001,
+    "port_kernel": 8002,
     "tlb_entries": 15,
     "tlb_replacement": "TLB",
     "cache_entries": 10,
@@ -11,3 +12,4 @@
     "cache_delay": 10,
     "log_level": "DEBUG"
 }
+

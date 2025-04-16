@@ -2,18 +2,19 @@ package cpuUtils
 
 import (
 	"encoding/json"
-	"log"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
-	globalsCpu	"github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
+
+	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
 // Inicializa la configuración leyendo el archivo json indicado
-func IniciarConfiguracion(filePath string) *globalsCpu.Config{
+func IniciarConfiguracion(filePath string) *globalsCpu.Config {
 	var config *globalsCpu.Config
 	configFile, err := os.Open(filePath)
 	if err != nil {
@@ -58,17 +59,11 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 }
 
 // Envia handshake al Kernel con IP y puerto de esta CPU
-func EnviarHandshakeAKernel() {
+func EnviarHandshakeAKernel(indentificador string, puertoLibre int) {
 
-	ipCpu, err := clientUtils.ObtenerIPLocal()
-	if err != nil {
-		log.Printf("Error obteniendo IP local para handshake")
-		return
-	}
+	puertoCpu := strconv.Itoa(puertoLibre)
 
-	puertoCpu := strconv.Itoa(globalsCpu.CpuConfig.PortCpu)
-
-	valores := []string{ipCpu, puertoCpu}
+	valores := []string{indentificador, globalsCpu.CpuConfig.IpCpu, puertoCpu}
 
 	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "cpus") //IP y Puerto de la CPU
 
@@ -77,9 +72,9 @@ func EnviarHandshakeAKernel() {
 // handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
 // Por ahora queda como placeholder para mantener la estructura modular
 func handleProceso(proceso Proceso) {
-    // Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
-    // Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
-    // Esto ayuda a mantener la arquitectura limpia y predecible
+	// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
+	// Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
+	// Esto ayuda a mantener la arquitectura limpia y predecible
 }
 
 // Simula la recepción de una interrupción
@@ -87,6 +82,3 @@ func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("## Llega interrupción al puerto Interrupt")
 	w.WriteHeader(http.StatusOK)
 }
-
-
-

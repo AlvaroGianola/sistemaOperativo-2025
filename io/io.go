@@ -19,24 +19,29 @@ func main() {
 
 	// Verifica que se haya pasado un nombre como argumento
 	args := os.Args
-	
-	nombre:= args[1]
+
+	nombre := args[1]
 	if len(args) < 2 {
 		fmt.Println("Error: se debe pasar el nombre del dispositivo IO como argumento")
 		os.Exit(1)
 	}
-	
+
+	puertoLibre, err := clientUtils.EncontrarPuertoDisponible(ioGlobalUtils.IoConfig.IPIo, ioGlobalUtils.IoConfig.PortIO)
+	if err != nil {
+		panic(err)
+	}
+
 	// Envia el handshake al Kernel informando el nombre del dispositivo IO
-	ioUtils.EnviarHandshakeAKernel(nombre)
+	ioUtils.EnviarHandshakeAKernel(nombre, puertoLibre)
 
 	// Inicializa el servidor HTTP y registra el endpoint que recibe peticiones del Kernel
 	mux := http.NewServeMux()
 	mux.HandleFunc("/recibirPeticion", ioUtils.RecibirPeticion)
 
 	// Usa el puerto definido en el archivo de configuración
-	direccion := fmt.Sprintf(":%d", ioGlobalUtils.IoConfig.PortIO)
+	direccion := fmt.Sprintf("%s:%d", ioGlobalUtils.IoConfig.IPIo, puertoLibre)
 	fmt.Printf("[IO] Servidor iniciado en puerto %d para dispositivo %s\n", ioGlobalUtils.IoConfig.PortIO, nombre)
-	err := http.ListenAndServe(direccion, mux)
+	err = http.ListenAndServe(direccion, mux)
 	if err != nil {
 		panic(err)
 	}
