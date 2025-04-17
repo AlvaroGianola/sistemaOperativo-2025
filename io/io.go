@@ -40,7 +40,7 @@ func main() {
 
 	// Usa el puerto definido en el archivo de configuración
 	direccion := fmt.Sprintf("%s:%d", ioGlobalUtils.IoConfig.IPIo, puertoLibre)
-	fmt.Printf("[IO] Servidor iniciado en puerto %d para dispositivo %s\n", ioGlobalUtils.IoConfig.PortIO, nombre)
+	fmt.Printf("[IO] Servidor iniciado en puerto %d para dispositivo %s\n", puertoLibre, nombre)
 	err = http.ListenAndServe(direccion, mux)
 	if err != nil {
 		panic(err)

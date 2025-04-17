@@ -40,7 +40,7 @@ func main() {
 
 	// Obtiene el puerto configurado para levantar el servidor
 	direccion := fmt.Sprintf("%s:%d", globalscpu.CpuConfig.IpCpu, puertoLibre)
-	fmt.Printf("[CPU] Servidor escuchando en puerto %d...\n", globalscpu.CpuConfig.PortCpu)
+	fmt.Printf("[CPU] Servidor escuchando en puerto %d...\n", puertoLibre)
 
 	err = http.ListenAndServe(direccion, mux)
 	if err != nil {
