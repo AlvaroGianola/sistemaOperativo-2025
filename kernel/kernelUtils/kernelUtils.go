@@ -18,6 +18,16 @@ import (
 var cpusRegistradas []Cpu
 var iosRegistradas []Io
 
+func BuscarCpuLibre() (Cpu, bool) {
+	for _, cpu := range cpusRegistradas {
+		if !cpu.Ocupada {
+			return cpu, true
+		}
+	}
+	var vacia Cpu
+	return vacia, false
+}
+
 // PID para nuevos procesos
 var proximoPID uint = 0
 var Plp PlanificadorLargoPlazo
@@ -36,6 +46,7 @@ func IniciarConfiguracion(filePath string) *globalskernel.Config {
 	return config
 }
 
+// TODO: implementar inicializacion de pcp
 func InciarPcp() PlanificadorCortoPlazo
 
 func InciarPlp() PlanificadorLargoPlazo {
@@ -57,6 +68,9 @@ type Cpu struct {
 	Puerto         int    `json:"puerto"`
 	Ocupada        bool
 }
+
+// TODO: Implementar el envio del PID
+func (cpu Cpu) enviarProceso(PID uint)
 
 type Io struct {
 	Nombre string
@@ -230,13 +244,53 @@ func (plp PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado PC
 
 // ------------ PLANIFICADOR CORTO PLAZO -----------------------------------------
 
+type SchedulerEstrategy interface {
+	selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo)
+}
+
+type FIFOScheduler struct {
+}
+
+func (f FIFOScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
+	proximo, ok := pcp.readyState.SacarProximoProceso()
+	if ok {
+		proximo.ME.readyCount++
+		proximo.MT.readyTime += proximo.timeInState()
+		pcp.ejecutar(proximo)
+	}
+}
+
+// estos dos es checkpoint 3:
+type SJFScheduler struct {
+}
+
+func (s SJFScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo)
+
+type SJFDesScheduler struct {
+}
+
+func (sd SJFDesScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo)
+
 type PlanificadorCortoPlazo struct {
-	readyState PCBList
+	readyState         PCBList
+	execState          PCBList
+	schedulerEstrategy SchedulerEstrategy
 }
 
 func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso PCB) {
 	proceso.timeInCurrentState = time.Now()
 	pcp.readyState.Agregar(proceso)
+}
+
+func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
+	proceso.timeInCurrentState = time.Now()
+	CPUlibre, ok := BuscarCpuLibre()
+	if ok {
+		CPUlibre.enviarProceso(proceso.PID)
+	} else {
+		//TODO: ver que hacer si no hay ninguna libre
+	}
+
 }
 
 //----------------------- Funciones para manejar los endpoints -------------------------
