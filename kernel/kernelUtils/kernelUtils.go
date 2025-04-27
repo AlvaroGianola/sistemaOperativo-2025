@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 
@@ -13,6 +14,11 @@ import (
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
 
+// Listas globales para almacenar las CPUs e IOs conectadas
+var cpusRegistradas []Cpu
+var iosRegistradas []Io
+
+// PID para nuevos procesos
 var proximoPID uint = 0
 var Plp PlanificadorLargoPlazo
 
@@ -57,6 +63,9 @@ type Io struct {
 	Ip     string
 	Puerto int
 }
+
+//-------------- Estructuras generales para el manejo de estados -------------------
+
 type MetricasDeEstado struct {
 	newCount         uint
 	readyCount       uint
@@ -74,7 +83,7 @@ type MetricasDeTiempo struct {
 	bloquedTime     float64
 	suspReadyTime   float64
 	suspBlockedTime float64
-	exitCount       float64
+	exitTime        float64
 }
 
 type PCB struct {
@@ -87,46 +96,94 @@ type PCB struct {
 	timeInCurrentState time.Time
 }
 
+type PCBList struct {
+	elementos []PCB
+}
+
+func (p *PCBList) Agregar(proceso PCB) {
+	p.elementos = append(p.elementos, proceso)
+}
+
+func (p *PCBList) SacarProximoProceso() (PCB, bool) {
+	var cero PCB
+	if len(p.elementos) == 0 {
+		return cero, false
+	}
+	primero := p.elementos[0]
+	p.elementos = p.elementos[1:]
+	return primero, true
+}
+
+func (p *PCBList) Vacia() bool {
+	return len(p.elementos) == 0
+}
+
+func (p *PCBList) VizualizarProximo() PCB {
+	return p.elementos[0]
+}
+
+func (p *PCBList) OrdenarPorPMC() {
+	sort.Slice(p.elementos, func(i, j int) bool {
+		return p.elementos[i].ProcessSize < p.elementos[j].ProcessSize
+	})
+}
+
 func (p *PCB) timeInState() float64 {
 	return time.Since(p.timeInCurrentState).Seconds()
 }
 
+//---------------- PLANIFICADOR LARGO PLAZO ---------------------------------------------
+
 type NewAlgorithmEstrategy interface {
-	proximoProceso(newQueue *globalskernel.Cola[PCB]) (PCB, bool)
 	manejarIngresoDeProceso(nuevoProceso PCB, plp *PlanificadorLargoPlazo)
+	manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo)
 }
 
 type FIFOEstrategy struct {
 }
 
-func (f FIFOEstrategy) proximoProceso(newQueue *globalskernel.Cola[PCB]) (PCB, bool) {
-	return newQueue.Desencolar()
+func (f FIFOEstrategy) manejarIngresoDeProceso(nuevoProceso PCB, plp *PlanificadorLargoPlazo) {
+	plp.newState.Agregar(nuevoProceso)
 }
 
-func (f FIFOEstrategy) manejarIngresoDeProceso(nuevoProceso PCB, plp *PlanificadorLargoPlazo) {
-	plp.newQueue.Encolar(nuevoProceso)
+func (f FIFOEstrategy) manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo) {
+	// chequea una copia del mismo, si puede irse lo desencola
+	proximoProceso := plp.newState.VizualizarProximo()
+	if plp.EnviarPedidoMemoria(proximoProceso) {
+		plp.EnviarProcesoAReady(proximoProceso)
+		plp.newState.SacarProximoProceso()
+	}
+	// Si sale mal
+	// aca podria ir un log de que todavia no hay espacio suficiente
+
 }
 
 type PMCPEstrategy struct {
 }
 
-func (p PMCPEstrategy) proximoProceso(newQueue *globalskernel.Cola[PCB]) (PCB, bool) {
-	return PCB{}, false
+func (p PMCPEstrategy) manejarIngresoDeProceso(nuevoProceso PCB, plp *PlanificadorLargoPlazo) {
+	plp.intentarInicializar(nuevoProceso)
 }
 
-func (p PMCPEstrategy) manejarIngresoDeProceso(nuevoProceso PCB, plp *PlanificadorLargoPlazo) {
+func (p PMCPEstrategy) manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo) {
+	plp.newState.OrdenarPorPMC()
+	proximoProceso := plp.newState.VizualizarProximo()
+	if plp.EnviarPedidoMemoria(proximoProceso) {
+		plp.EnviarProcesoAReady(proximoProceso)
+		plp.newState.SacarProximoProceso()
+	}
 }
 
 type PlanificadorLargoPlazo struct {
-	newQueue              globalskernel.Cola[PCB]
-	exitQueue             globalskernel.Cola[PCB]
+	newState              PCBList
+	exitState             PCBList
 	newAlgorithmEstrategy NewAlgorithmEstrategy
 	pcp                   PlanificadorCortoPlazo
 }
 
 func (plp *PlanificadorLargoPlazo) RecibirNuevoProceso(nuevoProceso PCB) {
 	nuevoProceso.timeInCurrentState = time.Now()
-	if plp.newQueue.Vacia() {
+	if plp.newState.Vacia() {
 		plp.intentarInicializar(nuevoProceso)
 	} else {
 		plp.newAlgorithmEstrategy.manejarIngresoDeProceso(nuevoProceso, plp)
@@ -137,7 +194,7 @@ func (plp PlanificadorLargoPlazo) intentarInicializar(nuevoProceso PCB) {
 	if plp.EnviarPedidoMemoria(nuevoProceso) {
 		plp.EnviarProcesoAReady(nuevoProceso)
 	} else {
-		plp.newQueue.Encolar(nuevoProceso)
+		plp.newState.Agregar(nuevoProceso)
 	}
 }
 
@@ -147,21 +204,42 @@ func (plp PlanificadorLargoPlazo) EnviarProcesoAReady(proceso PCB) {
 	plp.pcp.RecibirProceso(proceso)
 }
 
+func (plp *PlanificadorLargoPlazo) FinalizarProceso(proceso PCB) {
+	proceso.timeInCurrentState = time.Now()
+	proceso.ME.exitCount++
+	if plp.EnviarFinalizacionMemoria(proceso) {
+		// TODO: aca iria mediano plazo chequear los susps ready
+		// si no chequea new
+		plp.newAlgorithmEstrategy.manejarLiberacionDeProceso(plp)
+		plp.loggearMetricas(proceso)
+	}
+	// TODO:
+	// aca si sale mal iria un error
+}
+
+func (plp PlanificadorLargoPlazo) loggearMetricas(proceso PCB) {
+	proceso.MT.exitTime += proceso.timeInState()
+	// TODO: aca hay que simplemente loggear las metricas
+}
+
 // TODO: implementar el envio del proceso a memoria
 func (plp PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso PCB) bool
 
+// TODO: implementar el envio del aviso de finalizacion a memoria
+func (plp PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado PCB) bool
+
+// ------------ PLANIFICADOR CORTO PLAZO -----------------------------------------
+
 type PlanificadorCortoPlazo struct {
-	readyQueue globalskernel.Cola[PCB]
+	readyState PCBList
 }
 
 func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso PCB) {
 	proceso.timeInCurrentState = time.Now()
-	pcp.readyQueue.Encolar(proceso)
+	pcp.readyState.Agregar(proceso)
 }
 
-// Listas globales para almacenar las CPUs e IOs conectadas
-var cpusRegistradas []Cpu
-var iosRegistradas []Io
+//----------------------- Funciones para manejar los endpoints -------------------------
 
 // RegistrarCpu maneja el handshake de una CPU
 // Espera recibir un JSON con formato ["ip", "puerto"]
@@ -219,4 +297,5 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 func IniciarProceso(filePath string, processSize uint) {
 	nuevaPCB := PCB{PID: proximoPID, PC: 0, FilePath: filePath, ProcessSize: processSize}
 	Plp.RecibirNuevoProceso(nuevaPCB)
+	proximoPID++
 }
