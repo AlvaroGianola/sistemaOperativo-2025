@@ -15,6 +15,7 @@ func main() {
 
 	// Carga la configuración desde el archivo config.json
 	globalsKernel.KernelConfig = kernelUtils.IniciarConfiguracion("config.json")
+	kernelUtils.Plp = kernelUtils.InciarPlp()
 
 	// Crea el multiplexer HTTP para registrar handlers
 	mux := http.NewServeMux()
