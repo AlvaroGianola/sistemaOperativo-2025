@@ -33,7 +33,8 @@ var proximoPID uint = 0
 var Plp PlanificadorLargoPlazo
 
 func IniciarConfiguracion(filePath string) *globalskernel.Config {
-	var config *globalskernel.Config
+	config := &globalskernel.Config{} // Aca creamos el contenedor donde irá el JSON
+
 	configFile, err := os.Open(filePath)
 	if err != nil {
 		panic(err.Error())
@@ -41,7 +42,10 @@ func IniciarConfiguracion(filePath string) *globalskernel.Config {
 	defer configFile.Close()
 
 	jsonParser := json.NewDecoder(configFile)
-	jsonParser.Decode(&config)
+	err = jsonParser.Decode(config)
+	if err != nil {
+		panic("Error al decodificar config: " + err.Error())
+	}
 
 	return config
 }
@@ -226,16 +230,37 @@ func (plp *PlanificadorLargoPlazo) FinalizarProceso(proceso PCB) {
 		// si no chequea new
 		plp.newAlgorithmEstrategy.manejarLiberacionDeProceso(plp)
 		plp.loggearMetricas(proceso)
+	} else {
+		// Logueamos el error si Memoria rechazó la finalización
+		clientUtils.Logger.Error(fmt.Sprintf("Error: Memoria no aceptó finalizar el proceso PID %d", proceso.PID))
 	}
-	// TODO:
-	// aca si sale mal iria un error
 }
 
 func (plp PlanificadorLargoPlazo) loggearMetricas(proceso PCB) {
 	proceso.MT.exitTime += proceso.timeInState()
-	// TODO: aca hay que simplemente loggear las metricas
+
+	clientUtils.Logger.Info(fmt.Sprintf("Proceso finalizado - PID: %d", proceso.PID))
+
+	clientUtils.Logger.Info("++ Métricas de Estado:")
+	clientUtils.Logger.Info(fmt.Sprintf("  NEW:          %d", proceso.ME.newCount))
+	clientUtils.Logger.Info(fmt.Sprintf("  READY:        %d", proceso.ME.readyCount))
+	clientUtils.Logger.Info(fmt.Sprintf("  EXEC:         %d", proceso.ME.execCount))
+	clientUtils.Logger.Info(fmt.Sprintf("  BLOCKED:      %d", proceso.ME.bloquedCount))
+	clientUtils.Logger.Info(fmt.Sprintf("  SUSP_READY:   %d", proceso.ME.suspReadyCount))
+	clientUtils.Logger.Info(fmt.Sprintf("  SUSP_BLOCKED: %d", proceso.ME.suspBlockedCount))
+	clientUtils.Logger.Info(fmt.Sprintf("  EXIT:         %d", proceso.ME.exitCount))
+
+	clientUtils.Logger.Info("-- Métricas de Tiempo (en segundos):")
+	clientUtils.Logger.Info(fmt.Sprintf("  NEW:          %.2f", proceso.MT.newTime))
+	clientUtils.Logger.Info(fmt.Sprintf("  READY:        %.2f", proceso.MT.readyTime))
+	clientUtils.Logger.Info(fmt.Sprintf("  EXEC:         %.2f", proceso.MT.execTime))
+	clientUtils.Logger.Info(fmt.Sprintf("  BLOCKED:      %.2f", proceso.MT.bloquedTime))
+	clientUtils.Logger.Info(fmt.Sprintf("  SUSP_READY:   %.2f", proceso.MT.suspReadyTime))
+	clientUtils.Logger.Info(fmt.Sprintf("  SUSP_BLOCKED: %.2f", proceso.MT.suspBlockedTime))
+	clientUtils.Logger.Info(fmt.Sprintf("  EXIT:         %.2f", proceso.MT.exitTime))
 }
 
+// pedido de inicialización de proceso devuelve si Memoria tiene espacio suficiente para inicializarlo
 func (plp PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso PCB) bool {
 
 	// Creamos el contenido del paquete con lo que la Memoria necesita:
@@ -266,8 +291,33 @@ func (plp PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso PCB) bool {
 	return false
 }
 
-// TODO: implementar el envio del aviso de finalizacion a memoria
-func (plp PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado PCB) bool
+// envio del aviso de finalizacion a memoria
+func (plp PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado PCB) bool {
+
+	// Creamos paquete que contenga solo el PID
+	valores := []string{strconv.Itoa(int(procesoTernminado.PID))}
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	// Fijamos la direccion del endpoint de memoria
+	ip := globalskernel.KernelConfig.IpMemory
+	puerto := globalskernel.KernelConfig.PortMemory
+	endpoint := "finalizarProceso"
+
+	//Usamos EnviarPaqueteConRespuesta que devuelve la respuesta del servidor
+	resp := clientUtils.EnviarPaqueteConRespuesta(ip, puerto, endpoint, paquete)
+	if resp != nil && resp.StatusCode == http.StatusOK {
+		clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d finalizado correctamente en memoria", procesoTernminado.PID))
+		return true
+	}
+
+	//Si no responde con 200 OK, lo logueamos como advertencia
+	if resp == nil {
+		clientUtils.Logger.Warn(fmt.Sprintf("Error de conexión al finalizar el proceso PID %d (respuesta nula)", procesoTernminado.PID))
+	} else {
+		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la finalización del proceso PID %d. Status: %s", procesoTernminado.PID, resp.Status))
+	}
+	return false
+}
 
 // ------------ PLANIFICADOR CORTO PLAZO -----------------------------------------
 
