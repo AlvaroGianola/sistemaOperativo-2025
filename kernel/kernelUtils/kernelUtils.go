@@ -133,7 +133,7 @@ func (p *PCBList) Vacia() bool {
 }
 
 func (p *PCBList) VizualizarProximo() PCB {
-	return p.elementos[0]
+	return p.elementos[0] //Si la lista está vacia puede dar un panic
 }
 
 func (p *PCBList) OrdenarPorPMC() {
@@ -236,8 +236,35 @@ func (plp PlanificadorLargoPlazo) loggearMetricas(proceso PCB) {
 	// TODO: aca hay que simplemente loggear las metricas
 }
 
-// TODO: implementar el envio del proceso a memoria
-func (plp PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso PCB) bool
+func (plp PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso PCB) bool {
+
+	// Creamos el contenido del paquete con lo que la Memoria necesita:
+	// PID, Ruta al pseudocódigo, y Tamaño del proceso
+	valores := []string{
+		strconv.Itoa(int(nuevoProceso.PID)),
+		nuevoProceso.FilePath,
+		strconv.Itoa(int(nuevoProceso.ProcessSize)),
+	}
+
+	// Construimos el paquete
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	// Obtenemos IP y puerto de Memoria desde la config global del Kernel
+	ip := globalskernel.KernelConfig.IpMemory
+	puerto := globalskernel.KernelConfig.PortMemory
+	endpoint := "iniciarProceso"
+
+	resp := clientUtils.EnviarPaqueteConRespuesta(ip, puerto, endpoint, paquete)
+
+	// Validamos la respuesta (por ahora asumimos éxito si hay respuesta 200 OK)
+	if resp != nil && resp.StatusCode == http.StatusOK {
+		clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d enviado a Memoria correctamente", nuevoProceso.PID))
+		return true
+	}
+
+	clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó el proceso PID %d o hubo un error en la conexión", nuevoProceso.PID))
+	return false
+}
 
 // TODO: implementar el envio del aviso de finalizacion a memoria
 func (plp PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado PCB) bool
