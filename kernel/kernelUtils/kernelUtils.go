@@ -132,6 +132,16 @@ func (p *PCBList) SacarProximoProceso() (PCB, bool) {
 	return primero, true
 }
 
+func (p *PCBList) EliminarProcesoPorPID(pid uint) {
+	for i, pcb := range p.elementos {
+		if pcb.PID == pid {
+			// Eliminamos el elemento encontrado de la lista
+			p.elementos = append(p.elementos[:i], p.elementos[i+1:]...)
+			break
+		}
+	}
+}
+
 func (p *PCBList) Vacia() bool {
 	return len(p.elementos) == 0
 }
@@ -217,19 +227,41 @@ func (plp PlanificadorLargoPlazo) intentarInicializar(nuevoProceso PCB) {
 }
 
 func (plp PlanificadorLargoPlazo) EnviarProcesoAReady(proceso PCB) {
+
+	// Log del cambio de estado NEW → READY
+	clientUtils.Logger.Info(fmt.Sprintf(`Cambio de Estado: "## (%d) Pasa del estado NEW al estado READY"`, proceso.PID))
+
 	proceso.ME.newCount++
 	proceso.MT.newTime += proceso.timeInState()
+
+	proceso.timeInCurrentState = time.Now()
 	plp.pcp.RecibirProceso(proceso)
 }
 
 func (plp *PlanificadorLargoPlazo) FinalizarProceso(proceso PCB) {
-	proceso.timeInCurrentState = time.Now()
-	proceso.ME.exitCount++
+
 	if plp.EnviarFinalizacionMemoria(proceso) {
-		// TODO: aca iria mediano plazo chequear los susps ready
+
+		// Registramos el tiempo en el que el proceso entra en EXIT
+		proceso.timeInCurrentState = time.Now()
+		proceso.ME.exitCount++
+
+		// Confirmamos la transición de EXEC → EXIT
+		clientUtils.Logger.Info(fmt.Sprintf(`Cambio de Estado: "## (%d) Pasa del estado EXEC al estado EXIT"`, proceso.PID))
+
+		// TODO: aca iria mediano plazo chequear los susps ready (Checkpoint 3)
 		// si no chequea new
-		plp.newAlgorithmEstrategy.manejarLiberacionDeProceso(plp)
+
+		// Eliminamos el proceso de la lista de EXEC
+		plp.pcp.execState.EliminarProcesoPorPID(proceso.PID)
+
+		// Se registra en la lista de EXIT para registrar el cambio de estado
+		plp.exitState.Agregar(proceso)
+
 		plp.loggearMetricas(proceso)
+
+		plp.newAlgorithmEstrategy.manejarLiberacionDeProceso(plp)
+
 	} else {
 		// Logueamos el error si Memoria rechazó la finalización
 		clientUtils.Logger.Error(fmt.Sprintf("Error: Memoria no aceptó finalizar el proceso PID %d", proceso.PID))
@@ -331,7 +363,6 @@ type FIFOScheduler struct {
 func (f FIFOScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
 	proximo, ok := pcp.readyState.SacarProximoProceso()
 	if ok {
-		proximo.ME.readyCount++
 		proximo.MT.readyTime += proximo.timeInState()
 		pcp.ejecutar(proximo)
 	}
@@ -360,12 +391,41 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso PCB) {
 }
 
 func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
-	proceso.timeInCurrentState = time.Now()
+	// Sumamos el tiempo que el proceso estuvo en READY antes de pasar a EXEC
+	proceso.MT.readyTime += proceso.timeInState()
+
 	CPUlibre, ok := BuscarCpuLibre()
 	if ok {
+		// Log de cambio de estado READY -> EXEC
+		clientUtils.Logger.Info(fmt.Sprintf(`Cambio de Estado: "## (%d) Pasa del estado READY al estado EXEC"`, proceso.PID))
+
+		// Actualizamos el tiempo de entrada al estado EXEC
+		proceso.timeInCurrentState = time.Now()
+
+		//Envío del proceso a CPU
+
 		CPUlibre.enviarProceso(proceso.PID)
+
+		CPUlibre.Ocupada = true
+
+		//TODO:
+		//En el Checkpoint 3, tenemos que reemplazar esto por una notificación real desde la CPU
+		//usando un endpoint como /resultadoProcesos.
+
+		// Actualizamos métricas de EXEC
+		proceso.ME.execCount++
+		proceso.MT.execTime += proceso.timeInState()
+
+		// Finalizamos el proceso (transición a EXIT y log de métricas)
+		Plp.FinalizarProceso(proceso)
+
+		// Liberamos la CPU (como si la ejecución hubiera finalizado)
+		CPUlibre.Ocupada = false
+
 	} else {
 		//TODO: ver que hacer si no hay ninguna libre
+		clientUtils.Logger.Warn(fmt.Sprintf("No hay CPU libre para ejecutar el proceso PID %d", proceso.PID))
+		// Pensar si mandarlo READY o implementar reintentos de planificación
 	}
 
 }
