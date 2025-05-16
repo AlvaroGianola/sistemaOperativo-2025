@@ -30,6 +30,9 @@ func main() {
 	// IOs envían handshake a /ios
 	mux.HandleFunc("/ios", kernelUtils.RegistrarIo)
 
+	// aca las IOs mandan su estado desconectada o termine
+	mux.HandleFunc("/resultadoIos", kernelUtils.ResultadoIos)
+
 	// Levanta el servidor en el puerto definido en el archivo de configuración
 	direccion := fmt.Sprintf("%s:%d", globalsKernel.KernelConfig.IpKernel, globalsKernel.KernelConfig.PortKernel)
 	fmt.Printf("[Kernel] Servidor HTTP escuchando en puerto %d...\n", globalsKernel.KernelConfig.PortKernel)
