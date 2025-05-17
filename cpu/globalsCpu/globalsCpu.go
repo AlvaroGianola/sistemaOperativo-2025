@@ -16,3 +16,20 @@ type Config struct {
 }
 
 var CpuConfig *Config
+
+func ObtenerInstruccion(pc int, pid int) string {
+	switch pc {
+	case 0:
+		return "NOOP"
+	case 1:
+		return "WRITE test.txt HOLA_CPU"
+	case 2:
+		return "READ test.txt 2"
+	case 3:
+		return "GOTO 1"
+	case 4:
+		return "EXIT"
+	default:
+		return "NOOP"
+	}
+}

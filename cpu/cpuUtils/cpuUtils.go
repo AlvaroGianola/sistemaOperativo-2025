@@ -12,24 +12,22 @@ import (
 	"strings"
 	"time"
 
-
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
 const (
 	// Constantes para los códigos de operación
-	NOOP         = "NOOP"
-	WRITE        = "WRITE"
-	READ         = "READ"
-	GOTO         = "GOTO"
-	IO           = "IO"
-	INIT_PROC    = "INIT_PROC"
-	DUMP_MEMORY  = "DUMP_MEMORY"
-	EXIT         = "EXIT"
+	NOOP        = "NOOP"
+	WRITE       = "WRITE"
+	READ        = "READ"
+	GOTO        = "GOTO"
+	IO          = "IO"
+	INIT_PROC   = "INIT_PROC"
+	DUMP_MEMORY = "DUMP_MEMORY"
+	EXIT        = "EXIT"
 	// Constantes para los tipos de interrupción
-	INVALID      = "INVALID"
-
+	INVALID = "INVALID"
 )
 
 // Inicializa la configuración leyendo el archivo json indicado
@@ -70,9 +68,12 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error parseando JSON: %s", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
-	}	
+	}
 
-	HandleProceso(datos,w)
+	clientUtils.Logger.Info("## Llega proceso al puerto CPU")
+	w.WriteHeader(http.StatusOK)
+	clientUtils.Logger.Info(fmt.Sprintf("## PID: %d, PC: %d", datos.Pid, datos.Pc))
+	HandleProceso(datos)
 
 }
 
@@ -89,25 +90,27 @@ func EnviarHandshakeAKernel(indentificador string, puertoLibre int) {
 
 // handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
 // Por ahora queda como placeholder para mantener la estructura modular
-func HandleProceso(proceso Proceso,w http.ResponseWriter) {
+func HandleProceso(proceso Proceso) {
 
-	//#FETCH
-	clientUtils.Logger.Info("## Llega proceso al puerto CPU")
-	clientUtils.Logger.Info(fmt.Sprintf("## PID: %d, PC: %d", proceso.Pid, proceso.Pc))
-	clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", SolicitarProcesoMemoria(proceso.Pid, proceso.Pc)))
-	w.WriteHeader(http.StatusOK)
-	//#DECODE
-	cod_op,variables := DecodeProceso(SolicitarProcesoMemoria(proceso.Pid, proceso.Pc))
-	clientUtils.Logger.Info(fmt.Sprintf("## Instrucción decodificada: %s, con las variables %s", cod_op, variables))
-	//#EXECUTE
-	clientUtils.Logger.Info("## Ejecutando instrucción")
-	ExecuteInstruccion(&proceso, cod_op, variables)
-	//#CHECK 
+	for {
+		//#FETCH
+		instruccion := globalsCpu.ObtenerInstruccion(proceso.Pc, proceso.Pid)
+		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", instruccion))
+		//#DECODE
+		cod_op, variables := DecodeInstruccion(instruccion)
+		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción decodificada: %s, con las variables %s", cod_op, variables))
+		//#EXECUTE
+		clientUtils.Logger.Info("## Ejecutando instrucción")
+		ExecuteInstruccion(&proceso, cod_op, variables)
+		//#CHECK
+		if cod_op == EXIT {
+			continue
+		}
+		// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
+		// Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
+		// Esto ayuda a mantener la arquitectura limpia y predecible
+	}
 
-
-	// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
-	// Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
-	// Esto ayuda a mantener la arquitectura limpia y predecible
 }
 
 // Simula la recepción de una interrupción
@@ -118,110 +121,84 @@ func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {
 
 //----------------------------------------------------------------------
 
-func SolicitarProcesoMemoria(pid int, pc int) (string) {
-	// Simula la solicitud de un proceso a la memoria
-	// En este caso, simplemente devuelve el PID y un motivo vacío
-	switch pc {
-	case 0:
-		return "NOOP"
-	case 1:
-		return "WRITE 0 EJEMPLO_DE_ENUNCIADO"
-	case 2:
-		return "READ 0 20"
-	case 3:
-		return "GOTO 0"
-	case 4:
-		return "IO IMPRESORA 2500"
-	case 5:
-		return "INIT_PROC proceso_1 256"
-	case 6:
-		return "DUMP_MEMORY"
-	case 7:
-		return "EXIT"
-	default:
-		return "NOOP"
+func Decode(instruccion string) (op string, args []string) {
+	parts := strings.Fields(instruccion)
+	if len(parts) == 0 {
+		return "", []string{}
 	}
-
+	return parts[0], parts[1:]
 }
 
-func DecodeProceso(instruccion string) (cod_op string,variables []string) {
-	instruccionPartida := strings.Split(instruccion, " ")
+func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
+	cod_op, variables = Decode(instruccion)
 
-	if len(instruccionPartida) < 1 {
-		variables = []string{}
-		switch {
-		case instruccionPartida[0] == NOOP:
-			cod_op = NOOP
-
-		case instruccionPartida[0] == EXIT:
-			cod_op = EXIT
-		
-		case instruccionPartida[0] == DUMP_MEMORY:
-			cod_op = DUMP_MEMORY
+	switch cod_op {
+	case NOOP, EXIT, DUMP_MEMORY:
+		if len(variables) != 0 {
+			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion %s incorrecto, no se deben ingresar parametros para esta instruccion", cod_op)
+		}
+	case GOTO:
+		cod_op = GOTO
+		if len(variables) != 1 {
+			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion GOTO incorrecto, se debe ingresar 1 parametro")
+		}
+	case READ, WRITE, IO, INIT_PROC:
+		if len(variables) != 2 {
+			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion %s incorrecto, se deben ingresar 2 parametros", cod_op)
+		}
+	default:
+		if len(variables) > 3 {
+			clientUtils.Logger.Error("Instrucción inválida")
+			cod_op = INVALID
 		}
 	}
-
-	if len(instruccionPartida) < 2 {
-		if (instruccionPartida[0] == GOTO) {
-			cod_op = GOTO
-			variables = []string{instruccionPartida[1]}
-		}
-	}
-
-	if len(instruccionPartida) < 3 {
-		variables = []string{instruccionPartida[1], instruccionPartida[2]}
-		switch{
-		case instruccionPartida[0] == READ:
-			cod_op = READ
-		case instruccionPartida[0] == WRITE:
-			cod_op = WRITE
-		case instruccionPartida[0] == IO:
-			cod_op = IO
-		case instruccionPartida[0] == INIT_PROC:
-			cod_op = INIT_PROC
-	
-		} 
-	}
-
-	if len(instruccionPartida) > 3 {
-		clientUtils.Logger.Error("Instrucción inválida")
-		cod_op = INVALID		
-	}
-
 	return cod_op, variables
-
 }
 
 func ExecuteInstruccion(proceso *Proceso, cod_op string, variables []string) {
 	switch cod_op {
-		case "NOOP":
-			clientUtils.Logger.Info("## Ejecutando NOOP")
-			time.Sleep(500 * time.Millisecond)
-		case "WRITE":
-			clientUtils.Logger.Info("## Ejecutando WRITE")
-			WriteFile(proceso.Pid, variables[0], variables[1])
-		case "READ":
-			clientUtils.Logger.Info("## Ejecutando READ")
-			ReadFile(proceso.Pid, variables[0], 20)
-		case "GOTO":
-			clientUtils.Logger.Info("## Ejecutando GOTO")
-			proceso.Pc = 0
-		default:
+	case NOOP:
+		clientUtils.Logger.Info("## Ejecutando NOOP")
+		time.Sleep(2)
+		proceso.Pc++
+	case WRITE:
+		clientUtils.Logger.Info("## Ejecutando WRITE")
+		WriteFile(proceso.Pid, variables[0], variables[1])
+		proceso.Pc++
+	case READ:
+		clientUtils.Logger.Info("## Ejecutando READ")
+		ReadFile(proceso.Pid, variables[0], 20)
+		proceso.Pc++
+	case GOTO:
+		clientUtils.Logger.Info("## Ejecutando GOTO")
+		proceso.Pc = 0
+	default:
+		if cod_op != IO && cod_op != INIT_PROC && cod_op != DUMP_MEMORY && cod_op != EXIT {
+			clientUtils.Logger.Error("## Instruccion no reconocida")
+		} else {
+			Syscall(proceso, cod_op, variables)
+		}
 	}
 
+}
+
+func Syscall(proceso *Proceso, cod_op string, variables []string) {
 	switch cod_op {
-		case "IO":
-			clientUtils.Logger.Info("## Ejecutando IO")
-		case "INIT_PROC":
-			clientUtils.Logger.Info("## Ejecutando INIT_PROC")
-		case "DUMP_MEMORY":
-			clientUtils.Logger.Info("## Ejecutando DUMP_MEMORY")
-		case "EXIT":
-			clientUtils.Logger.Info("## Ejecutando EXIT")
-		default:
-			clientUtils.Logger.Info("## Instrucción no reconocida")
+	case IO:
+		clientUtils.Logger.Info("## Llamar al sistema para ejecutar IO")
+		proceso.Pc++
+	case INIT_PROC:
+		clientUtils.Logger.Info("## Llamar al sistema para ejecutar INIT_PROC")
+		proceso.Pc++
+	case DUMP_MEMORY:
+		clientUtils.Logger.Info("## Llamar al sistema para ejecutar DUMP_MEMORY")
+		proceso.Pc++
+	case EXIT:
+		clientUtils.Logger.Info("## Llamar al sistema para ejecutar EXIT")
+		proceso.Pc++
+	default:
+		clientUtils.Logger.Error("Error, instruccion no reconocida")
 	}
-
 }
 
 func ReadFile(pid int, path string, lineCount int) {
