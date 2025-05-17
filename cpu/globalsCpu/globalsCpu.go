@@ -17,7 +17,26 @@ type Config struct {
 
 var CpuConfig *Config
 
+var Identificador string
+
+func SetIdentificador(nuevoId string) {
+	Identificador = nuevoId
+}
+
 //Mocks de instrucciones de un proceso
+
+func ObtenerMix(pc int, pid int) string {
+	switch pc {
+	case 0:
+		return "NOOP"
+	case 1:
+		return "READ resources/test.txt 2"
+	case 2:
+		return "EXIT"
+	default:
+		return "NOOP"
+	}
+}
 
 func ObtenerInstruccion(pc int, pid int) string {
 	switch pc {

@@ -94,7 +94,7 @@ func HandleProceso(proceso Proceso) {
 
 	for {
 		//#FETCH
-		instruccion := globalsCpu.ObtenerInstruccion(proceso.Pc, proceso.Pid)
+		instruccion := globalsCpu.ObtenerMix(proceso.Pc, proceso.Pid)
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", instruccion))
 		//#DECODE
 		cod_op, variables := DecodeInstruccion(instruccion)
@@ -103,7 +103,7 @@ func HandleProceso(proceso Proceso) {
 		clientUtils.Logger.Info("## Ejecutando instrucción")
 		ExecuteInstruccion(&proceso, cod_op, variables)
 		//#CHECK
-		if cod_op == GOTO {
+		if cod_op == GOTO || cod_op == EXIT {
 			break
 		}
 		// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
@@ -120,6 +120,33 @@ func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {
 }
 
 //----------------------------------------------------------------------
+/*
+func EnviarResultadoAKernel(pid int, motivo string) {
+
+	url := fmt.Sprintf("http://%s:%d/resultadoProcesos", globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel)
+
+	body := map[string]interface{}{
+		"pid":    pid,
+		"motivo": motivo,
+	}
+
+	jsonData, _ := json.Marshal(body)
+	_, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		clientUtils.Logger.Error(fmt.Sprintf("Fallo al notificar al Kernel: %s", err.Error()))
+	}
+}
+*/
+
+func EnviarResultadoAKernel(pc int, cod_op string, args []string) {
+	pcStr := strconv.Itoa(pc)
+
+	ids := []string{globalsCpu.Identificador, pcStr}
+
+	valores := append(ids, args...)
+
+	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "/resultadoProcesos")
+}
 
 func Decode(instruccion string) (op string, args []string) {
 	parts := strings.Fields(instruccion)
@@ -186,15 +213,19 @@ func Syscall(proceso *Proceso, cod_op string, variables []string) {
 	switch cod_op {
 	case IO:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar IO")
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		proceso.Pc++
 	case INIT_PROC:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar INIT_PROC")
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		proceso.Pc++
 	case DUMP_MEMORY:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar DUMP_MEMORY")
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		proceso.Pc++
 	case EXIT:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar EXIT")
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		proceso.Pc++
 	default:
 		clientUtils.Logger.Error("Error, instruccion no reconocida")
