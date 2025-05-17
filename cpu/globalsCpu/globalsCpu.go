@@ -17,17 +17,34 @@ type Config struct {
 
 var CpuConfig *Config
 
+//Mocks de instrucciones de un proceso
+
 func ObtenerInstruccion(pc int, pid int) string {
 	switch pc {
 	case 0:
 		return "NOOP"
 	case 1:
-		return "WRITE test.txt HOLA_CPU"
+		return "WRITE resources/test.txt HOLA_CPU"
 	case 2:
-		return "READ test.txt 2"
+		return "READ resources/test.txt 2"
 	case 3:
 		return "GOTO 1"
 	case 4:
+		return "EXIT"
+	default:
+		return "NOOP"
+	}
+}
+
+func ObtenerSyscall(pc int, pid int) string {
+	switch pc {
+	case 0:
+		return "IO IMPRESORA 25000"
+	case 1:
+		return "INIT_PROC proceso1 256"
+	case 2:
+		return "DUMP_MEMORY"
+	case 3:
 		return "EXIT"
 	default:
 		return "NOOP"

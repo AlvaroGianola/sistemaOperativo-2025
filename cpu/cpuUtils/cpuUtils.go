@@ -103,8 +103,8 @@ func HandleProceso(proceso Proceso) {
 		clientUtils.Logger.Info("## Ejecutando instrucción")
 		ExecuteInstruccion(&proceso, cod_op, variables)
 		//#CHECK
-		if cod_op == EXIT {
-			continue
+		if cod_op == GOTO {
+			break
 		}
 		// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
 		// Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
