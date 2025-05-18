@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	globalsKernel "github.com/sisoputnfrba/tp-golang/kernel/globalsKernel"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
@@ -76,8 +77,8 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientUtils.Logger.Info(fmt.Sprintf("Recibido resultado: %v", resultados.Valores))
-	w.WriteHeader(http.StatusOK)
+	resultadoStr := strings.Join(resultados.Valores, " ")
+	clientUtils.Logger.Info(fmt.Sprintf("Resultado recibido: %s", resultadoStr))
 
 }
 

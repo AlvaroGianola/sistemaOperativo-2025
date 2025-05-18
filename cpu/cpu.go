@@ -35,7 +35,7 @@ func main() {
 		Pc:  0,
 	}
 
-	cpuUtils.HandleProceso(proceso)
+	cpuUtils.HandleProceso(&proceso)
 	//------------------------------------
 
 	// Crea un enrutador HTTP (mux) y registra los endpoints que atenderá la CPU

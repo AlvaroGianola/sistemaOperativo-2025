@@ -1,10 +1,8 @@
 package cpuUtils
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +12,7 @@ import (
 
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
+	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
 
 const (
@@ -54,27 +53,34 @@ type Proceso struct {
 // Recibe un proceso del Kernel y lo loguea
 func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("Error leyendo body: %s", err.Error())
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
+	paquete := serverUtils.RecibirPaquetes(w, r)
 
-	var datos Proceso
-	err = json.Unmarshal(body, &datos)
+	spid := paquete.Valores[0]
+	spc := paquete.Valores[1]
+
+	pid, err := strconv.Atoi(spid)
 	if err != nil {
-		log.Printf("Error parseando JSON: %s", err.Error())
-		w.WriteHeader(http.StatusBadRequest)
+		clientUtils.Logger.Error("Error al convertir PID a int")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	clientUtils.Logger.Info("## Llega proceso al puerto CPU")
+	pc, err := strconv.Atoi(spc)
+	if err != nil {
+		clientUtils.Logger.Error("Error al convertir PC a int")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	clientUtils.Logger.Info(fmt.Sprintf("## Llega proceso - PID: %d, PC: %d", pid, pc))
+	proceso := &Proceso{
+		Pid: pid,
+		Pc:  pc,
+	}
+
+	HandleProceso(proceso)
+
 	w.WriteHeader(http.StatusOK)
-	clientUtils.Logger.Info(fmt.Sprintf("## PID: %d, PC: %d", datos.Pid, datos.Pc))
-	HandleProceso(datos)
-
 }
 
 // Envia handshake al Kernel con IP y puerto de esta CPU
@@ -90,7 +96,7 @@ func EnviarHandshakeAKernel(indentificador string, puertoLibre int) {
 
 // handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
 // Por ahora queda como placeholder para mantener la estructura modular
-func HandleProceso(proceso Proceso) {
+func HandleProceso(proceso *Proceso) {
 
 	for {
 		//#FETCH
@@ -101,9 +107,13 @@ func HandleProceso(proceso Proceso) {
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción decodificada: %s, con las variables %s", cod_op, variables))
 		//#EXECUTE
 		clientUtils.Logger.Info("## Ejecutando instrucción")
-		ExecuteInstruccion(&proceso, cod_op, variables)
+		ExecuteInstruccion(proceso, cod_op, variables)
 		//#CHECK
+		//TODO
+
+		//Condicion de cierre
 		if cod_op == GOTO || cod_op == EXIT {
+			clientUtils.Logger.Info(fmt.Sprintf("## El Proceso %d terminó con motivo de %s", proceso.Pid, cod_op))
 			break
 		}
 		// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
@@ -120,32 +130,18 @@ func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {
 }
 
 //----------------------------------------------------------------------
-/*
-func EnviarResultadoAKernel(pid int, motivo string) {
-
-	url := fmt.Sprintf("http://%s:%d/resultadoProcesos", globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel)
-
-	body := map[string]interface{}{
-		"pid":    pid,
-		"motivo": motivo,
-	}
-
-	jsonData, _ := json.Marshal(body)
-	_, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		clientUtils.Logger.Error(fmt.Sprintf("Fallo al notificar al Kernel: %s", err.Error()))
-	}
-}
-*/
 
 func EnviarResultadoAKernel(pc int, cod_op string, args []string) {
 	pcStr := strconv.Itoa(pc)
 
-	ids := []string{globalsCpu.Identificador, pcStr}
+	ids := []string{globalsCpu.Identificador, pcStr, cod_op}
 
 	valores := append(ids, args...)
 
-	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "/resultadoProcesos")
+	resultadoStr := strings.Join(valores, " ")
+	clientUtils.Logger.Info(fmt.Sprintf("valores a enviar a kernel: %s", resultadoStr))
+
+	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "resultadoProcesos")
 }
 
 func Decode(instruccion string) (op string, args []string) {
@@ -186,19 +182,28 @@ func ExecuteInstruccion(proceso *Proceso, cod_op string, variables []string) {
 	switch cod_op {
 	case NOOP:
 		clientUtils.Logger.Info("## Ejecutando NOOP")
-		time.Sleep(2)
+		time.Sleep(2 * time.Second)
 		proceso.Pc++
 	case WRITE:
 		clientUtils.Logger.Info("## Ejecutando WRITE")
-		WriteFile(proceso.Pid, variables[0], variables[1])
+		direccion := variables[0]
+		dato := variables[1]
+		writeMemoria(proceso.Pid, direccion, dato)
 		proceso.Pc++
 	case READ:
 		clientUtils.Logger.Info("## Ejecutando READ")
-		ReadFile(proceso.Pid, variables[0], 20)
+		direccion := variables[0]
+		tamanio := variables[1]
+		readMemoria(proceso.Pid, direccion, tamanio)
 		proceso.Pc++
 	case GOTO:
 		clientUtils.Logger.Info("## Ejecutando GOTO")
-		proceso.Pc = 0
+		nuevoPC, err := strconv.Atoi(variables[0])
+		if err != nil {
+			clientUtils.Logger.Warn("GOTO: argumento inválido, no es un número")
+			break
+		}
+		proceso.Pc = nuevoPC
 	default:
 		if cod_op != IO && cod_op != INIT_PROC && cod_op != DUMP_MEMORY && cod_op != EXIT {
 			clientUtils.Logger.Error("## Instruccion no reconocida")
@@ -213,60 +218,33 @@ func Syscall(proceso *Proceso, cod_op string, variables []string) {
 	switch cod_op {
 	case IO:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar IO")
-		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 	case INIT_PROC:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar INIT_PROC")
-		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 	case DUMP_MEMORY:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar DUMP_MEMORY")
-		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 	case EXIT:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar EXIT")
-		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 	default:
 		clientUtils.Logger.Error("Error, instruccion no reconocida")
 	}
 }
 
-func ReadFile(pid int, path string, lineCount int) {
-	file, err := os.Open(path)
-	if err != nil {
-		clientUtils.Logger.Error(fmt.Sprintf("PID: %d - Error al abrir archivo para READ: %s", pid, err.Error()))
-		return
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	count := 0
-	for scanner.Scan() {
-		clientUtils.Logger.Info(fmt.Sprintf("PID: %d - LECTURA - Línea %d: %s", pid, count+1, scanner.Text()))
-		count++
-		if count >= lineCount {
-			break
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		clientUtils.Logger.Error(fmt.Sprintf("PID: %d - Error al leer archivo: %s", pid, err.Error()))
-	}
+func readMemoria(pid int, direccion string, tamanio string) {
+	// Simula leer desde memoria: loguea y muestra por pantalla
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - LECTURA - Dirección lógica: %s, Tamaño: %s", pid, direccion, tamanio))
+	fmt.Printf("[PID %d] Lectura desde memoria - Dirección: %s, Tamaño: %s\n", pid, direccion, tamanio)
 }
 
-func WriteFile(pid int, path string, data string) {
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		clientUtils.Logger.Error(fmt.Sprintf("PID: %d - Error al abrir archivo para WRITE: %s", pid, err.Error()))
-		return
-	}
-	defer file.Close()
-
-	_, err = file.WriteString(data + "\n")
-	if err != nil {
-		clientUtils.Logger.Error(fmt.Sprintf("PID: %d - Error al escribir archivo: %s", pid, err.Error()))
-		return
-	}
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - ESCRITURA - Valor escrito: %s", pid, data))
+func writeMemoria(pid int, direccion string, dato string) {
+	// Simula escribir en memoria: loguea la operación
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - ESCRITURA - Dirección lógica: %s, Dato: %s", pid, direccion, dato))
+	fmt.Printf("[PID %d] Escritura en memoria - Dirección: %s, Dato: %s\n", pid, direccion, dato)
 }

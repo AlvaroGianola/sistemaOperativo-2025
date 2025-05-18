@@ -30,7 +30,7 @@ func ObtenerMix(pc int, pid int) string {
 	case 0:
 		return "NOOP"
 	case 1:
-		return "READ resources/test.txt 2"
+		return "READ 0 2"
 	case 2:
 		return "EXIT"
 	default:
@@ -43,9 +43,9 @@ func ObtenerInstruccion(pc int, pid int) string {
 	case 0:
 		return "NOOP"
 	case 1:
-		return "WRITE resources/test.txt HOLA_CPU"
+		return "WRITE 0 HOLA_CPU"
 	case 2:
-		return "READ resources/test.txt 2"
+		return "READ 0 2"
 	case 3:
 		return "GOTO 1"
 	case 4:
