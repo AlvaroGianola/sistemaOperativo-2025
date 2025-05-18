@@ -113,3 +113,20 @@ func EncontrarPuertoDisponible(ip string, puertoInicial int) (int, error) {
 		return puerto, nil
 	}
 }
+
+func EnviarPaqueteConRespuesta(ip string, puerto int, direccion string, paquete Paquete) *http.Response {
+	body, err := json.Marshal(paquete)
+	if err != nil {
+		log.Printf("error codificando mensajes: %s", err.Error())
+		return nil
+	}
+
+	url := fmt.Sprintf("http://%s:%d/%s", ip, puerto, direccion)
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		log.Printf("error enviando mensajes a ip:%s puerto:%d", ip, puerto)
+		return nil
+	}
+
+	return resp
+}

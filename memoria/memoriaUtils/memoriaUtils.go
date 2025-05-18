@@ -3,7 +3,6 @@ package memoriaUtils
 import (
 	"encoding/json"
 	"strings"
-	"sync"
 
 	//"errors"
 	"net/http"
@@ -12,8 +11,6 @@ import (
 	globalsMemoria "github.com/sisoputnfrba/tp-golang/memoria/globalsMemoria"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
-
-var mutexProcesos sync.Mutex
 
 // Inicia la configuración leyendo el archivo JSON correspondiente
 
@@ -50,8 +47,6 @@ func RecibirPeticionKernel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// Por ahora solo responde 200 OK y loguea la llegada
-// Va a tener que recibir un PID y un Path del archivo de pseudocodigo (en ese orden)
 func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 	//podria mejorar haciendo funciones auxiliares y cambiando el globalsMemoria.proceso
 
@@ -69,8 +64,8 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//hasta esto es decode teniendo en cuenta posible error
-	mutexProcesos.Lock()
-	defer mutexProcesos.Unlock()
+	globalsMemoria.MutexProcesos.Lock()
+	defer globalsMemoria.MutexProcesos.Unlock()
 
 	if ExisteProceso(datosInstruccion.Pid) {
 		clientUtils.Logger.Error("Proceso con Pid ya existe:", "pid especifico", datosInstruccion.Pid)
@@ -123,6 +118,33 @@ func ExisteProceso(Pid int) bool {
 // Por ahora solo responde 200 OK y loguea la llegada
 func FinalizarProceso(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para finalizar proceso recibida desde Kernel")
+	var datos struct {
+		Pid int `json:"pid"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&datos)
+	if err != nil {
+		clientUtils.Logger.Error("Error decodificando el body:", "error", err)
+		http.Error(w, "Body inválido", http.StatusBadRequest)
+		return
+	}
+	globalsMemoria.MutexProcesos.Lock()
+	defer globalsMemoria.MutexProcesos.Unlock()
+	proceso := buscarProceso(globalsMemoria.ProcesosEnMemoria, datos.Pid)
+	if proceso == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", datos.Pid)
+		http.Error(w, "PID no existe", http.StatusNotFound)
+		return
+	}
+	// Eliminar el proceso de la lista
+	for i, p := range globalsMemoria.ProcesosEnMemoria {
+		if p.Pid == datos.Pid {
+			globalsMemoria.ProcesosEnMemoria = append(globalsMemoria.ProcesosEnMemoria[:i], globalsMemoria.ProcesosEnMemoria[i+1:]...)
+			break
+		}
+	}
+	clientUtils.Logger.Info("Se finaliza el proceso", "PID", proceso.Pid, "Tamaño", len(proceso.Instrucciones))
+	clientUtils.Logger.Info("Espacio libre en memoria:", "espacio", EspacioLibre())
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -140,8 +162,8 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Body inválido", http.StatusBadRequest)
 		return
 	}
-	mutexProcesos.Lock()
-	defer mutexProcesos.Unlock()
+	globalsMemoria.MutexProcesos.Lock()
+	defer globalsMemoria.MutexProcesos.Unlock()
 
 	proceso := buscarProceso(globalsMemoria.ProcesosEnMemoria, datos.Pid)
 
@@ -165,9 +187,9 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 }
 
 func buscarProceso(procesos []globalsMemoria.Proceso, pid int) *globalsMemoria.Proceso {
-	for _, proceso := range procesos {
-		if proceso.Pid == pid {
-			return &proceso
+	for i := range procesos {
+		if procesos[i].Pid == pid {
+			return &procesos[i]
 		}
 	}
 	return nil
@@ -179,6 +201,6 @@ func EspacioLibre() int {
 	return 2048
 }
 
-func Swapear(*http.Request) error { // nose bien si esto es asi siquiera veremos dijo el ciego
+func Swapear() error {
 	return nil
 }

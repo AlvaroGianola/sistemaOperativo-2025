@@ -1,5 +1,9 @@
 package globalsmemoria
 
+import (
+	"sync"
+)
+
 type Config struct {
 	PortMemory     int    `json:"port_memory"`
 	IpMemory       string `json:"ip_memory"`
@@ -23,3 +27,5 @@ type Proceso struct {
 }
 
 var ProcesosEnMemoria []Proceso
+
+var MutexProcesos sync.Mutex
