@@ -29,6 +29,7 @@ var sem_cpusLibres = make(chan int)
 var proximoPID uint = 0
 var muProximoPID sync.Mutex
 var Plp PlanificadorLargoPlazo
+
 //var iniciarLargoPlazo = make(chan struct{})
 
 func IniciarConfiguracion(filePath string) *globalskernel.Config {
@@ -633,7 +634,7 @@ func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
 	proceso.timeInCurrentState = time.Now()
 	proceso.ME.execCount++
 	pcp.execState.Agregar(proceso)
-	
+
 	cpusOcupadas.Agregar(CPUlibre)
 	CPUlibre.enviarProceso(proceso.PID, proceso.PC)
 }
@@ -713,6 +714,7 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// saco el proceso de EXEC y acumulo cuanto tiempo estuvo ejecutando
+	println("CPU:", cpuId, "ejecutando:", cpu.PIDenEjecucion)
 	proceso, ok := Plp.pcp.execState.BuscarYSacarPorPID(cpu.PIDenEjecucion)
 	proceso.MT.execTime += proceso.timeInState()
 	if !ok {
@@ -741,9 +743,10 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		}
 		IniciarProceso(respuesta.Valores[FILE_PATH], uint(tamProc))
 		//CPU sigue ejecutando
-		cpu.enviarProceso(proceso.PID, proceso.PC)
 		proceso.timeInCurrentState = time.Now()
 		Plp.pcp.execState.Agregar(proceso)
+		cpu.enviarProceso(proceso.PID, proceso.PC)
+		println("se agrego despues de init")
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
 		Plp.FinalizarProceso(proceso)

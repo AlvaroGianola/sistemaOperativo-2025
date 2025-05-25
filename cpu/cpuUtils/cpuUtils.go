@@ -135,6 +135,8 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		if cod_op == EXIT {
 			clientUtils.Logger.Info("## Proceso finalizado")
 			break
+		} else if cod_op == IO || cod_op == INIT_PROC || cod_op == DUMP_MEMORY {
+			break
 		}
 		if cod_op == INVALID {
 			clientUtils.Logger.Error("## Instrucción inválida, abortando ejecución")
@@ -191,8 +193,8 @@ func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
 			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion %s incorrecto, se deben ingresar 2 parametros", cod_op)
 		}
 	default:
-			clientUtils.Logger.Error("Instrucción inválida")
-			cod_op = INVALID
+		clientUtils.Logger.Error("Instrucción inválida")
+		cod_op = INVALID
 	}
 	return cod_op, variables
 }
