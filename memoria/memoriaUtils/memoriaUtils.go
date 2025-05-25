@@ -33,20 +33,6 @@ func IniciarConfiguracion(filePath string) *globalsMemoria.Config {
 	return config
 }
 
-// RecibirPeticionCpu es el endpoint para recibir mensajes de CPU
-// Por ahora solo responde 200 OK y loguea la llegada
-func RecibirPeticionCpu(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición recibida desde CPU")
-	w.WriteHeader(http.StatusOK)
-}
-
-// RecibirPeticionKernel es el endpoint para recibir mensajes del Kernel
-// Por ahora solo responde 200 OK y loguea la llegada
-func RecibirPeticionKernel(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición recibida desde Kernel")
-	w.WriteHeader(http.StatusOK)
-}
-
 func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 	//podria mejorar haciendo funciones auxiliares y cambiando el globalsMemoria.proceso
 
