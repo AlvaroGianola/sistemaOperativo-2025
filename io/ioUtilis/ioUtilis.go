@@ -3,7 +3,6 @@ package ioUtils
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -12,8 +11,9 @@ import (
 
 	ioGlobalUtils "github.com/sisoputnfrba/tp-golang/io/globalsIO"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
+	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
-
+var Nombre string
 // Lee el archivo de configuración y lo parsea en la estructura Config
 func IniciarConfiguracion(filePath string) *ioGlobalUtils.Config {
 	var config *ioGlobalUtils.Config
@@ -29,37 +29,31 @@ func IniciarConfiguracion(filePath string) *ioGlobalUtils.Config {
 	return config
 }
 
+const(
+	PID = iota
+	TIME
+)
+
 func RecibirPeticion(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("Error leyendo el body de la petición: %s", err.Error())
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
 
-	defer r.Body.Close()
+	peticion := serverUtils.RecibirPaquetes(w,r)
 
-	type RequestIO struct {
-		PID    int `json:"pid"`
-		Tiempo int `json:"tiempo"`
-	}
-
-	var req RequestIO
-	err = json.Unmarshal(body, &req)
-	if err != nil {
-		log.Printf("Error parseando JSON: %s", err.Error())
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
+	
 	// Log obligatorio de inicio de IO
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Inicio de IO - Tiempo: %d", req.PID, req.Tiempo))
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %s - Inicio de IO - Tiempo: %s", peticion.Valores[PID], peticion.Valores[TIME]))
 
 	// Simula la ejecución del IO (usleep equivalente con time.Sleep)
-	time.Sleep(time.Duration(req.Tiempo) * time.Millisecond)
+    milisegundos, err := strconv.Atoi(peticion.Valores[TIME])
+    if err != nil {
+		clientUtils.Logger.Error("Error al convertir el tiempo")
+        return
+    }
 
+    // Convertir a time.Duration y dormir
+    time.Sleep(time.Duration(milisegundos) * time.Millisecond)
 	// Log obligatorio de fin de IO
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Fin de IO", req.PID))
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %s - Fin de IO", peticion.Valores[PID]))
+	avisarFinIO(peticion.Valores[PID])
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -72,4 +66,17 @@ func EnviarHandshakeAKernel(nombre string, puertoIo int) {
 	// El último parámetro "ios" representa el end point
 	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, "ios") //IP y Puerto de la CPU
 
+}
+
+func avisarFinIO(PID string){
+	valores := []string{Nombre,"Fin", PID}
+	endpoint := "resultadoIos"
+	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, endpoint)
+}
+
+func AvisarDesconexion() {
+	valores := []string{Nombre,"Desconexion"}
+	endpoint := "resultadosIos" 
+	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, endpoint)
+	clientUtils.Logger.Info(fmt.Sprintf("[IO] Dispositivo %s notifica su cierre al Kernel", Nombre))
 }
