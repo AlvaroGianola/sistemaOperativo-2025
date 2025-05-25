@@ -254,7 +254,6 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
 	case EXIT:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar EXIT")
-		globalsCpu.ProcesoActual.Pc++
 		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
 	default:
 		clientUtils.Logger.Error("Error, instruccion no reconocida")

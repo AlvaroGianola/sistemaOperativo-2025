@@ -634,6 +634,8 @@ func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
 	proceso.timeInCurrentState = time.Now()
 	proceso.ME.execCount++
 	pcp.execState.Agregar(proceso)
+	println("lo agregue a ejecutar:", proceso.PID)
+	CPUlibre.PIDenEjecucion = proceso.PID
 
 	cpusOcupadas.Agregar(CPUlibre)
 	CPUlibre.enviarProceso(proceso.PID, proceso.PC)
@@ -741,11 +743,13 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
-		IniciarProceso(respuesta.Valores[FILE_PATH], uint(tamProc))
-		//CPU sigue ejecutando
 		proceso.timeInCurrentState = time.Now()
 		Plp.pcp.execState.Agregar(proceso)
-		cpu.enviarProceso(proceso.PID, proceso.PC)
+		go cpu.enviarProceso(proceso.PID, proceso.PC)
+
+		go IniciarProceso(respuesta.Valores[FILE_PATH], uint(tamProc))
+		//CPU sigue ejecutando
+
 		println("se agrego despues de init")
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
