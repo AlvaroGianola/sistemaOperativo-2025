@@ -29,7 +29,7 @@ var sem_cpusLibres = make(chan int)
 var proximoPID uint = 0
 var muProximoPID sync.Mutex
 var Plp PlanificadorLargoPlazo
-var iniciarLargoPlazo = make(chan struct{})
+//var iniciarLargoPlazo = make(chan struct{})
 
 func IniciarConfiguracion(filePath string) *globalskernel.Config {
 	config := &globalskernel.Config{} // Aca creamos el contenedor donde irá el JSON
@@ -84,10 +84,10 @@ type Cpu struct {
 	PIDenEjecucion uint
 }
 
-func (cpu Cpu) enviarProceso(PID uint, PC uint) {
+func (cpu *Cpu) enviarProceso(PID uint, PC uint) {
 	valores := []string{strconv.Itoa(int(PID)), strconv.Itoa(int(PC))}
 	paquete := clientUtils.Paquete{Valores: valores}
-
+	cpu.PIDenEjecucion = PID
 	//Mandamos el PID y PC al endpoint de CPU
 	endpoint := "recibirProceso"
 
@@ -620,6 +620,7 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso PCB) {
 	proceso.ME.readyCount++
 	pcp.readyState.Agregar(proceso)
 
+	fmt.Printf("CPUs libres: %d\n", len(sem_cpusLibres))
 	sem_cpusLibres <- 0
 	pcp.schedulerEstrategy.selecionarProximoAEjecutar(pcp)
 }
@@ -632,12 +633,8 @@ func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
 	proceso.timeInCurrentState = time.Now()
 	proceso.ME.execCount++
 	pcp.execState.Agregar(proceso)
-	//Envío del proceso a CPU
-	CPUlibre.PIDenEjecucion = proceso.PID
-
+	
 	cpusOcupadas.Agregar(CPUlibre)
-	println("CPU ocupada:", CPUlibre.Identificador)
-	println("CPU esta vacia:", cpusOcupadas.Vacia())
 	CPUlibre.enviarProceso(proceso.PID, proceso.PC)
 }
 
@@ -708,7 +705,6 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 
 	respuesta := serverUtils.RecibirPaquetes(w, r)
 	cpuId := respuesta.Valores[CPU_ID]
-	println("CPU ID:", cpuId)
 	cpu, ok := cpusOcupadas.BuscarPorID(cpuId)
 	if !ok {
 		clientUtils.Logger.Error("Error al encontrar la cpu")
@@ -748,7 +744,6 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		cpu.enviarProceso(proceso.PID, proceso.PC)
 		proceso.timeInCurrentState = time.Now()
 		Plp.pcp.execState.Agregar(proceso)
-		println("hola")
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
 		Plp.FinalizarProceso(proceso)
@@ -759,7 +754,7 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DUMP_MEMORY" {
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "IO" {
-		manejarIo(respuesta, proceso)
+		go manejarIo(respuesta, proceso)
 		cpusOcupadas.SacarPorID(cpu.Identificador)
 		cpusLibres.Agregar(*cpu)
 		<-sem_cpusLibres
@@ -893,6 +888,7 @@ func IniciarProceso(filePath string, processSize uint) {
 	muProximoPID.Lock()
 	//defer muProximoPID.Unlock()
 	nuevaPCB := PCB{PID: proximoPID, PC: 0, FilePath: filePath, ProcessSize: processSize}
+	println(filePath)
 	proximoPID++
 	muProximoPID.Unlock()
 	for stop {

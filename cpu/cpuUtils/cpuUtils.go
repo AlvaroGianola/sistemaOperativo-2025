@@ -191,10 +191,8 @@ func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
 			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion %s incorrecto, se deben ingresar 2 parametros", cod_op)
 		}
 	default:
-		if len(variables) > 3 {
 			clientUtils.Logger.Error("Instrucción inválida")
 			cod_op = INVALID
-		}
 	}
 	return cod_op, variables
 }

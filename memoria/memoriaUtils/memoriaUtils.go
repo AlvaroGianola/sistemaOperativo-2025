@@ -100,8 +100,15 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 }
 func ParsearInstrucciones(archivo []byte) []string {
 	todasLasInstrucciones := string(archivo)
-	instruccionesSeparadas := strings.Split(todasLasInstrucciones, "\n")
-	return instruccionesSeparadas
+	lineas := strings.Split(todasLasInstrucciones, "\n")
+	var instrucciones []string
+	for _, linea := range lineas {
+		instruccion := strings.TrimSpace(linea)
+		if instruccion != "" {
+			instrucciones = append(instrucciones, instruccion)
+		}
+	}
+	return instrucciones
 }
 
 func FinalizarProceso(w http.ResponseWriter, r *http.Request) {
@@ -174,8 +181,8 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 
 	clientUtils.Logger.Info("Instrucción siguiente:", "pid", pid, "pc", pc, "instrucción", instruccion)
 
-	w.Write([]byte(instruccion))
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(instruccion))
 }
 
 func EspacioLibre() int {
