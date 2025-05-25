@@ -48,7 +48,7 @@ func main() {
 	fmt.Printf("[Kernel] Servidor HTTP escuchando en puerto %d...\n", globalsKernel.KernelConfig.PortKernel)
 
 	go kernelUtils.EsperarEnter()
-	go kernelUtils.IniciarProceso(filePath, uint(tamProc))
+	go kernelUtils.IniciarKernel(filePath, uint(tamProc))
 
 	err = http.ListenAndServe(direccion, mux)
 	if err != nil {

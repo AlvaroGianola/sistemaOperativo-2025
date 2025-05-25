@@ -16,8 +16,6 @@ import (
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
 
-var stop = true
-
 // Listas globales para almacenar las CPUs e IOs conectadas
 
 var cpusLibres CpuList
@@ -30,7 +28,7 @@ var proximoPID uint = 0
 var muProximoPID sync.Mutex
 var Plp PlanificadorLargoPlazo
 
-//var iniciarLargoPlazo = make(chan struct{})
+var iniciarLargoPlazo = make(chan struct{})
 
 func IniciarConfiguracion(filePath string) *globalskernel.Config {
 	config := &globalskernel.Config{} // Aca creamos el contenedor donde irá el JSON
@@ -891,24 +889,26 @@ func manejarDesconexionIo(nombre string) {
 	io.MarcarDesconectada()
 }
 
+func IniciarKernel(filePath string, processSize uint) {
+
+	<-iniciarLargoPlazo
+	IniciarProceso(filePath, processSize)
+}
+
 func IniciarProceso(filePath string, processSize uint) {
 	muProximoPID.Lock()
-	//defer muProximoPID.Unlock()
 	nuevaPCB := PCB{PID: proximoPID, PC: 0, FilePath: filePath, ProcessSize: processSize}
 	println(filePath)
 	proximoPID++
 	muProximoPID.Unlock()
-	for stop {
-	}
-	//<-iniciarLargoPlazo // espera bloqueante
-	Plp.RecibirNuevoProceso(nuevaPCB)
 
+	Plp.RecibirNuevoProceso(nuevaPCB)
 }
 
 func EsperarEnter() {
 	for {
 		fmt.Println("Presione ENTER para iniciar la planificación de Largo Plazo...")
 		bufio.NewReader(os.Stdin).ReadString('\n')
-		stop = false
+		iniciarLargoPlazo <- struct{}{}
 	}
 }
