@@ -619,7 +619,6 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso PCB) {
 	proceso.ME.readyCount++
 	pcp.readyState.Agregar(proceso)
 
-	fmt.Printf("CPUs libres: %d\n", len(sem_cpusLibres))
 	sem_cpusLibres <- 0
 	pcp.schedulerEstrategy.selecionarProximoAEjecutar(pcp)
 }
@@ -632,7 +631,6 @@ func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
 	proceso.timeInCurrentState = time.Now()
 	proceso.ME.execCount++
 	pcp.execState.Agregar(proceso)
-	println("lo agregue a ejecutar:", proceso.PID)
 	CPUlibre.PIDenEjecucion = proceso.PID
 
 	cpusOcupadas.Agregar(CPUlibre)
@@ -714,7 +712,6 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// saco el proceso de EXEC y acumulo cuanto tiempo estuvo ejecutando
-	println("CPU:", cpuId, "ejecutando:", cpu.PIDenEjecucion)
 	proceso, ok := Plp.pcp.execState.BuscarYSacarPorPID(cpu.PIDenEjecucion)
 	proceso.MT.execTime += proceso.timeInState()
 	if !ok {
@@ -747,8 +744,6 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 
 		go IniciarProceso(respuesta.Valores[FILE_PATH], uint(tamProc))
 		//CPU sigue ejecutando
-
-		println("se agrego despues de init")
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
 		Plp.FinalizarProceso(proceso)
@@ -898,7 +893,6 @@ func IniciarKernel(filePath string, processSize uint) {
 func IniciarProceso(filePath string, processSize uint) {
 	muProximoPID.Lock()
 	nuevaPCB := PCB{PID: proximoPID, PC: 0, FilePath: filePath, ProcessSize: processSize}
-	println(filePath)
 	proximoPID++
 	muProximoPID.Unlock()
 
