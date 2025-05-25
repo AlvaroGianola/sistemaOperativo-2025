@@ -13,9 +13,7 @@ import (
 )
 
 func main() {
-	// Inicializa el logger
-	clientUtils.ConfigurarLogger("io.log")
-
+	
 	// Carga la configuración
 	ioGlobalUtils.IoConfig = ioUtils.IniciarConfiguracion("config.json")
 
@@ -26,6 +24,10 @@ func main() {
 		os.Exit(1)
 	}
 	ioUtils.Nombre = args[1]
+
+	// Inicializa el logger
+	clientUtils.ConfigurarLogger("io"+ ioUtils.Nombre + ".log")
+
 
 	// Encuentra un puerto libre
 	puertoLibre, err := clientUtils.EncontrarPuertoDisponible(ioGlobalUtils.IoConfig.IPIo, ioGlobalUtils.IoConfig.PortIO)

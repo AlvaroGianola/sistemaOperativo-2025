@@ -2,16 +2,19 @@ package memoriaUtils
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
+
 	//"errors"
 	"net/http"
 	"os"
 
 	globalsMemoria "github.com/sisoputnfrba/tp-golang/memoria/globalsMemoria"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
+	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
 
-var mutexProcesos sync.Mutex
+var procesos map[int]globalsMemoria.Proceso
 
 // Inicia la configuración leyendo el archivo JSON correspondiente
 
@@ -27,6 +30,7 @@ func IniciarConfiguracion(filePath string) *globalsMemoria.Config {
 
 	jsonParser := json.NewDecoder(configFile)
 	err = jsonParser.Decode(config)
+
 	if err != nil {
 		panic("Error al decodificar config: " + err.Error())
 	}
@@ -34,28 +38,38 @@ func IniciarConfiguracion(filePath string) *globalsMemoria.Config {
 	return config
 }
 
+const (
+	PID = iota
+	FILE_PATH
+	SIZE
+)
+
 func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 	//podria mejorar haciendo funciones auxiliares y cambiando el globalsMemoria.proceso
 
 	clientUtils.Logger.Info("[Memoria] Petición para inicar proceso recibida desde Kernel")
 
-	// decodifica los datos
-	var datosInstruccion struct {
-		Pid  int    `json:"pid"`
-		Path string `json:"path"`
-	}
-	err := json.NewDecoder(r.Body).Decode(&datosInstruccion)
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[PID])
 	if err != nil {
-		clientUtils.Logger.Error("Error decodificando el body:", "error", err)
-		http.Error(w, "Body inválido", http.StatusBadRequest)
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
+
+	size, err := strconv.Atoi(pedido.Valores[SIZE])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear el tamaño del proceso")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
 	//hasta esto es decode teniendo en cuenta posible error
 	globalsMemoria.MutexProcesos.Lock()
 	defer globalsMemoria.MutexProcesos.Unlock()
 
-	if ExisteProceso(datosInstruccion.Pid) {
-		clientUtils.Logger.Error("Proceso con Pid ya existe:", "pid especifico", datosInstruccion.Pid)
+	if _, ok := procesos[pid]; ok {
+		clientUtils.Logger.Error("Proceso con Pid ya existe:", "pid especifico", pid)
 		http.Error(w, "PID ya existe", http.StatusConflict)
 		return
 	}
@@ -65,7 +79,7 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 	//archivos sin chequear si el pid ya existe
 
 	//esto va a leer el path
-	instruccionesSinParsear, err := os.ReadFile(datosInstruccion.Path)
+	instruccionesSinParsear, err := os.ReadFile(pedido.Valores[FILE_PATH])
 	if err != nil {
 		clientUtils.Logger.Error("Error al leer el path:", "error", err)
 		http.Error(w, "Path invalido", http.StatusBadRequest)
@@ -74,17 +88,14 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 
 	listaInstrucciones := ParsearInstrucciones(instruccionesSinParsear)
 
-	procesoNuevo := globalsMemoria.Proceso{
-		Pid:           datosInstruccion.Pid,
-		Instrucciones: listaInstrucciones,
-		Pc:            0,
+	if EspacioLibre() < size {
+		http.Error(w, "Espacio en memoria insuficiete.", http.StatusBadRequest)
 	}
-
-	globalsMemoria.ProcesosEnMemoria = append(globalsMemoria.ProcesosEnMemoria, procesoNuevo)
+	procesos[pid] = globalsMemoria.Proceso{Instrucciones: listaInstrucciones, Size: size}
 
 	w.WriteHeader(http.StatusOK)
 
-	clientUtils.Logger.Info("Se crea el proceso", "PID", procesoNuevo.Pid, "Tamaño", len(procesoNuevo.Instrucciones))
+	clientUtils.Logger.Info("Se crea el proceso", "PID", pid, "Tamaño", pedido.Valores[SIZE])
 }
 func ParsearInstrucciones(archivo []byte) []string {
 	todasLasInstrucciones := string(archivo)
@@ -92,24 +103,11 @@ func ParsearInstrucciones(archivo []byte) []string {
 	return instruccionesSeparadas
 }
 
-
-func ExisteProceso(Pid int) bool {
-	for _, proceso := range globalsMemoria.ProcesosEnMemoria {
-		if proceso.Pid == Pid {
-			return true
-		}
-
-	}
-	return false
-}
-
-// Por ahora solo responde 200 OK y loguea la llegada
 func FinalizarProceso(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para finalizar proceso recibida desde Kernel")
-	var datos struct {
-		Pid int `json:"pid"`
-	}
-	err := json.NewDecoder(r.Body).Decode(&datos)
+
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[PID])
 	if err != nil {
 		clientUtils.Logger.Error("Error decodificando el body:", "error", err)
 		http.Error(w, "Body inválido", http.StatusBadRequest)
@@ -117,71 +115,66 @@ func FinalizarProceso(w http.ResponseWriter, r *http.Request) {
 	}
 	globalsMemoria.MutexProcesos.Lock()
 	defer globalsMemoria.MutexProcesos.Unlock()
-	proceso := buscarProceso(globalsMemoria.ProcesosEnMemoria, datos.Pid)
-	if proceso == nil {
-		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", datos.Pid)
+
+	proceso, ok := procesos[pid]
+	if !ok {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
 	}
 	// Eliminar el proceso de la lista
-	for i, p := range globalsMemoria.ProcesosEnMemoria {
-		if p.Pid == datos.Pid {
-			globalsMemoria.ProcesosEnMemoria = append(globalsMemoria.ProcesosEnMemoria[:i], globalsMemoria.ProcesosEnMemoria[i+1:]...)
-			break
-		}
-	}
-	clientUtils.Logger.Info("Se finaliza el proceso", "PID", proceso.Pid, "Tamaño", len(proceso.Instrucciones))
+	delete(procesos, pid)
+
+	clientUtils.Logger.Info("Se finaliza el proceso", "PID", pid, "Tamaño", proceso.Size)
 	clientUtils.Logger.Info("Espacio libre en memoria:", "espacio", EspacioLibre())
 
 	w.WriteHeader(http.StatusOK)
 }
 
-// Por ahora solo responde 200 OK y loguea la llegada
 // Va a tener que recibir un PID y un PC (en ese orden) y responder con la siguiente instruccion
+const (
+	PC = 1
+)
+
 func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para inicar proceso recibida desde Kernel")
-	var datos struct {
-		Pid int `json:"pid"`
-		Pc  int `json:"pc"`
-	}
-	err := json.NewDecoder(r.Body).Decode(&datos)
+
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[PID])
 	if err != nil {
-		clientUtils.Logger.Error("Error decodificando el body:", "error", err)
-		http.Error(w, "Body inválido", http.StatusBadRequest)
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	pc, err := strconv.Atoi(pedido.Valores[PID])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PC")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
 	globalsMemoria.MutexProcesos.Lock()
 	defer globalsMemoria.MutexProcesos.Unlock()
 
-	proceso := buscarProceso(globalsMemoria.ProcesosEnMemoria, datos.Pid)
+	proceso, ok := procesos[pid]
 
-	if proceso == nil {
-		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", datos.Pid)
+	if !ok {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
 	}
 
-	if datos.Pc < 0 || datos.Pc >= len(proceso.Instrucciones) {
-		clientUtils.Logger.Error("PC fuera de rango:", "pc", datos.Pc)
+	if pc < 0 || pc >= len(proceso.Instrucciones) {
+		clientUtils.Logger.Error("PC fuera de rango:", "pc", pc)
 		http.Error(w, "PC fuera de rango", http.StatusBadRequest)
 		return
 	}
-	instruccion := proceso.Instrucciones[datos.Pc]
-	proceso.Pc = datos.Pc + 1
-	clientUtils.Logger.Info("Instrucción siguiente:", "pid", datos.Pid, "pc", datos.Pc, "instrucción", instruccion)
+	instruccion := proceso.Instrucciones[pc]
+
+	clientUtils.Logger.Info("Instrucción siguiente:", "pid", pid, "pc", pc, "instrucción", instruccion)
 
 	w.Write([]byte(instruccion))
 	w.WriteHeader(http.StatusOK)
-}
-
-func buscarProceso(procesos []globalsMemoria.Proceso, pid int) *globalsMemoria.Proceso {
-	for i := range procesos {
-		if procesos[i].Pid == pid {
-			return &procesos[i]
-		}
-	}
-	return nil
 }
 
 func EspacioLibre() int {
@@ -190,6 +183,6 @@ func EspacioLibre() int {
 	return 2048
 }
 
-func Swapear(*http.Request) error { // nose bien si esto es asi siquiera veremos dijo el ciego
+func Swapear() error {
 	return nil
 }

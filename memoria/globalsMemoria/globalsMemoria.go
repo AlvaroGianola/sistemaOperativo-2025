@@ -21,11 +21,8 @@ type Config struct {
 var MemoriaConfig *Config
 
 type Proceso struct {
-	Pid           int
 	Instrucciones []string
-	Pc            int // ver de hacer un constructor para poder setear siempre en cero este
+	Size          int
 }
-
-var ProcesosEnMemoria []Proceso
 
 var MutexProcesos sync.Mutex

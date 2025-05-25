@@ -28,16 +28,6 @@ func main() {
 	// Inicializa el logger para registrar los eventos del módulo CPU
 	clientUtils.ConfigurarLogger("cpu" + indentificador + ".log")
 
-	//-----------------------------------
-	//Inicializo proceso a modo de prueba
-	proceso := cpuUtils.Proceso{
-		Pid: 1,
-		Pc:  0,
-	}
-
-	cpuUtils.HandleProceso(&proceso)
-	//------------------------------------
-
 	// Crea un enrutador HTTP (mux) y registra los endpoints que atenderá la CPU
 	mux := http.NewServeMux()
 	mux.HandleFunc("/dispatch", cpuUtils.RecibirProceso)

@@ -6,21 +6,21 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
 
-	globalsKernel "github.com/sisoputnfrba/tp-golang/kernel/globalsKernel"
+	globalskernel "github.com/sisoputnfrba/tp-golang/kernel/globalsKernel"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
-
 
 // Listas globales para almacenar las CPUs e IOs conectadas
 
 var cpusLibres CpuList
 var cpusOcupadas CpuList
-var iosRegistradas = IoMap{ios: make(map[string]Io)}
+var iosRegistradas = IoMap{ios: make(map[string]*Io)}
 var sem_cpusLibres = make(chan int)
 
 // PID para nuevos procesos
@@ -39,7 +39,10 @@ func IniciarConfiguracion(filePath string) *globalskernel.Config {
 	defer configFile.Close()
 
 	jsonParser := json.NewDecoder(configFile)
-	jsonParser.Decode(&config)
+	err = jsonParser.Decode(config)
+	if err != nil {
+		panic("Error al decodificar config: " + err.Error())
+	}
 
 	return config
 }
@@ -156,6 +159,8 @@ func (cl *CpuList) Vacia() bool {
 	return len(cl.cpus) == 0
 }
 
+// Struct y funciones para IO
+
 type Io struct {
 	Nombre            string
 	Ip                string
@@ -231,7 +236,7 @@ func (io *Io) EstaConectada() bool {
 	return io.conectada
 }
 
-func (io Io) enviarProceso(PID uint, time int) {
+func (io *Io) enviarProceso(PID uint, time int) {
 	valores := []string{strconv.Itoa(int(PID)), strconv.Itoa(time)}
 	paquete := clientUtils.Paquete{Valores: valores}
 
@@ -242,32 +247,31 @@ func (io Io) enviarProceso(PID uint, time int) {
 }
 
 type IoMap struct {
-	ios map[string]Io
+	ios map[string]*Io
 	mu  sync.Mutex
 }
 
-// Obtener IO por nombre
-func (im *IoMap) Obtener(nombre string) (Io, bool) {
+// Obtener IO por nombre (retorna *Io para no copiar Mutex)
+func (im *IoMap) Obtener(nombre string) (*Io, bool) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 	io, ok := im.ios[nombre]
 	return io, ok
 }
 
-// Agregar o actualizar IO
-func (im *IoMap) Agregar(io Io) {
+// Agregar o actualizar IO (usa puntero)
+func (im *IoMap) Agregar(io *Io) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 	im.ios[io.Nombre] = io
 }
 
-// Marcar desconectada
+// Marcar desconectada (ya es un puntero, se modifica directamente)
 func (im *IoMap) MarcarDesconectada(nombre string) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 	if io, ok := im.ios[nombre]; ok {
 		io.conectada = false
-		im.ios[nombre] = io
 	}
 }
 
@@ -454,7 +458,7 @@ func (plp *PlanificadorLargoPlazo) RecibirNuevoProceso(nuevoProceso PCB) {
 	}
 }
 
-func (plp PlanificadorLargoPlazo) intentarInicializar(nuevoProceso PCB) {
+func (plp *PlanificadorLargoPlazo) intentarInicializar(nuevoProceso PCB) {
 	if plp.EnviarPedidoMemoria(nuevoProceso) {
 		plp.EnviarProcesoAReady(nuevoProceso)
 	} else {
@@ -462,7 +466,7 @@ func (plp PlanificadorLargoPlazo) intentarInicializar(nuevoProceso PCB) {
 	}
 }
 
-func (plp PlanificadorLargoPlazo) EnviarProcesoAReady(proceso PCB) {
+func (plp *PlanificadorLargoPlazo) EnviarProcesoAReady(proceso PCB) {
 
 	// Log del cambio de estado NEW → READY
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado NEW al estado READY", proceso.PID))
@@ -501,7 +505,7 @@ func (plp *PlanificadorLargoPlazo) FinalizarProceso(proceso PCB) {
 	}
 }
 
-func (plp PlanificadorLargoPlazo) loggearMetricas(proceso PCB) {
+func (plp *PlanificadorLargoPlazo) loggearMetricas(proceso PCB) {
 	proceso.MT.exitTime += proceso.timeInState()
 
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Finaliza el proceso", proceso.PID))
@@ -517,7 +521,7 @@ func (plp PlanificadorLargoPlazo) loggearMetricas(proceso PCB) {
 }
 
 // pedido de inicialización de proceso devuelve si Memoria tiene espacio suficiente para inicializarlo
-func (plp PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso PCB) bool {
+func (plp *PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso PCB) bool {
 
 	// Creamos el contenido del paquete con lo que la Memoria necesita:
 	// PID, Ruta al pseudocódigo, y Tamaño del proceso
@@ -548,7 +552,7 @@ func (plp PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso PCB) bool {
 }
 
 // envio del aviso de finalizacion a memoria
-func (plp PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado PCB) bool {
+func (plp *PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado PCB) bool {
 
 	// Creamos paquete que contenga solo el PID
 	valores := []string{strconv.Itoa(int(procesoTernminado.PID))}
@@ -596,12 +600,12 @@ func (f FIFOScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
 type SJFScheduler struct {
 }
 
-func (s SJFScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo)
+func (s SJFScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {}
 
 type SRTScheduler struct {
 }
 
-func (sd SRTScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo)
+func (sd SRTScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {}
 
 type PlanificadorCortoPlazo struct {
 	readyState         PCBList
@@ -632,7 +636,7 @@ func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
 	cpusOcupadas.Agregar(CPUlibre)
 }
 
-func (pcp PlanificadorCortoPlazo) EnviarProcesoABlocked(proceso PCB, nombreIo string) {
+func (pcp *PlanificadorCortoPlazo) EnviarProcesoABlocked(proceso PCB, nombreIo string) {
 
 	// Log del cambio de estado EXEC → BLOCKED
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado EXEC al estado BLOCKED", proceso.PID))
@@ -646,9 +650,9 @@ func (pcp PlanificadorCortoPlazo) EnviarProcesoABlocked(proceso PCB, nombreIo st
 var pmp PlanificadorMedianoPlazo
 
 type PlanificadorMedianoPlazo struct {
-	blockedState     PCBList
-	suspBlockedState PCBList
-	suspReadyState   PCBList
+	blockedState PCBList
+	//suspBlockedState PCBList
+	suspReadyState PCBList
 }
 
 func (pmp *PlanificadorMedianoPlazo) RecibirProceso(proceso PCB) {
@@ -667,7 +671,7 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 
 	puerto, err := strconv.Atoi(paquete.Valores[2])
 	if err != nil {
-		clientUtils.Logger.Info("Error al parsear puerto de CPU")
+		clientUtils.Logger.Error("Error al parsear puerto de CPU")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -695,11 +699,28 @@ const (
 
 // ENDPOINT PARA LAS SYSCALLS
 func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
-	resultados := serverUtils.RecibirPaquetes(w, r)
+	respuesta := serverUtils.RecibirPaquetes(w, r)
+	cpuId := respuesta.Valores[CPU_ID]
+	cpu, ok := cpusOcupadas.BuscarPorID(cpuId)
+	if !ok {
+		clientUtils.Logger.Error("Error al encontrar la cpu")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
 
-	if len(resultados.Valores) == 0 {
-		clientUtils.Logger.Warn("Resultado vacío")
-		http.Error(w, "Resultado sin datos", http.StatusBadRequest)
+	// saco el proceso de EXEC y acumulo cuanto tiempo estuvo ejecutando
+	proceso, ok := Plp.pcp.execState.BuscarYSacarPorPID(cpu.PIDenEjecucion)
+	proceso.MT.execTime += proceso.timeInState()
+	if !ok {
+		clientUtils.Logger.Error("Error al encontrar el proceso en ejecucion")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	pcActualizado, err := strconv.Atoi(respuesta.Valores[PC])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PC del proceso")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 	proceso.PC = uint(pcActualizado)
@@ -785,7 +806,7 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 		io.Puerto = puerto // actualizo el puerto por las dudas nose si en esa nueva conexion el puerto viejo este ocupado por otra io
 		manejarPendientesIo(nombre)
 	} else {
-		nuevaIo := Io{
+		nuevaIo := &Io{
 			Nombre:    paquete.Valores[0],
 			Ip:        paquete.Valores[1],
 			Puerto:    puerto,
@@ -794,7 +815,7 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 		}
 
 		iosRegistradas.Agregar(nuevaIo)
-		clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %+v", nuevaIo))
+		clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %+v", &nuevaIo))
 	}
 }
 
@@ -804,7 +825,10 @@ const (
 	PID
 )
 
-	puerto, err := strconv.Atoi(paquete.Valores[2])
+func ResultadoIos(w http.ResponseWriter, r *http.Request) {
+	paquete := serverUtils.RecibirPaquetes(w, r)
+	nombre := paquete.Valores[NOMBRE]
+	ioPid, err := strconv.Atoi(paquete.Valores[PID])
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear PID de IO")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -830,10 +854,11 @@ const (
 	}
 }
 
-	nuevaIo := Io{
-		Nombre: paquete.Valores[0],
-		Ip:     paquete.Valores[1],
-		Puerto: puerto,
+func manejarPendientesIo(nombre string) {
+	io, ok := iosRegistradas.Obtener(nombre)
+	if !ok {
+		clientUtils.Logger.Error("Error al buscar IO por nombre")
+		return
 	}
 	if io.TieneProcesosEsperando() {
 		pedido, ok := io.SacarProximoProceso()

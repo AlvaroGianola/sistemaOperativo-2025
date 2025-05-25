@@ -15,9 +15,17 @@ type Config struct {
 	LogLevel        string `json:"log_level"`
 }
 
+// Representa un proceso con su PID y su Program Counter (PC)
+type Proceso struct {
+	Pid int `json:"pid"`
+	Pc  int `json:"pc"`
+}
+
 var CpuConfig *Config
 
 var Identificador string
+
+var ProcesoActual *Proceso
 
 func SetIdentificador(nuevoId string) {
 	Identificador = nuevoId

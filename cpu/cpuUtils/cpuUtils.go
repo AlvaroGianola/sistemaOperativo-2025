@@ -3,7 +3,6 @@ package cpuUtils
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -29,25 +28,30 @@ const (
 	INVALID = "INVALID"
 )
 
-// Inicializa la configuración leyendo el archivo json indicado
-func IniciarConfiguracion(filePath string) *globalsCpu.Config {
-	var config *globalsCpu.Config
-	configFile, err := os.Open(filePath)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	defer configFile.Close()
-
-	jsonParser := json.NewDecoder(configFile)
-	jsonParser.Decode(&config)
-
-	return config
-}
-
 // Representa un proceso con su PID y su Program Counter (PC)
 type Proceso struct {
 	Pid int `json:"pid"`
 	Pc  int `json:"pc"`
+}
+
+// Inicializa la configuración leyendo el archivo json indicado
+
+func IniciarConfiguracion(filePath string) *globalsCpu.Config {
+	config := &globalsCpu.Config{} // Aca creamos el contenedor donde irá el JSON
+
+	configFile, err := os.Open(filePath)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer configFile.Close()
+
+	jsonParser := json.NewDecoder(configFile)
+	err = jsonParser.Decode(config)
+	if err != nil {
+		panic("Error al decodificar config: " + err.Error())
+	}
+
+	return config
 }
 
 // Recibe un proceso del Kernel y lo loguea
@@ -73,14 +77,25 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientUtils.Logger.Info(fmt.Sprintf("## Llega proceso - PID: %d, PC: %d", pid, pc))
-	proceso := &Proceso{
-		Pid: pid,
-		Pc:  pc,
-	}
+	globalsCpu.ProcesoActual.Pc = pc
+	globalsCpu.ProcesoActual.Pid = pid
 
-	HandleProceso(proceso)
+	HandleProceso(globalsCpu.ProcesoActual)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func PedirSiguienteInstruccionMemoria() (string, bool) {
+
+	valores := []string{strconv.Itoa(globalsCpu.ProcesoActual.Pid), strconv.Itoa(globalsCpu.ProcesoActual.Pc)}
+	paquete := clientUtils.Paquete{Valores: valores}
+	instruccion := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpMemory, globalsCpu.CpuConfig.PortMemory, "recibirInstruccionMemoria", paquete)
+
+	if instruccion == nil {
+		clientUtils.Logger.Error("No se recibió respuesta de Memoria")
+		return "", false
+	}
+	return string(instruccion), true
 }
 
 // Envia handshake al Kernel con IP y puerto de esta CPU
@@ -96,11 +111,15 @@ func EnviarHandshakeAKernel(indentificador string, puertoLibre int) {
 
 // handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
 // Por ahora queda como placeholder para mantener la estructura modular
-func HandleProceso(proceso *Proceso) {
+func HandleProceso(proceso *globalsCpu.Proceso) {
 
 	for {
 		//#FETCH
-		instruccion := globalsCpu.ObtenerMix(proceso.Pc, proceso.Pid)
+		instruccion, ok := PedirSiguienteInstruccionMemoria()
+		if !ok {
+			clientUtils.Logger.Error("Error al pedir la siguiente instruccion a memoria")
+			break
+		}
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", instruccion))
 		//#DECODE
 		cod_op, variables := DecodeInstruccion(instruccion)
@@ -110,15 +129,6 @@ func HandleProceso(proceso *Proceso) {
 		ExecuteInstruccion(proceso, cod_op, variables)
 		//#CHECK
 		//TODO
-
-		//Condicion de cierre
-		if cod_op == GOTO || cod_op == EXIT {
-			clientUtils.Logger.Info(fmt.Sprintf("## El Proceso %d terminó con motivo de %s", proceso.Pid, cod_op))
-			break
-		}
-		// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
-		// Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
-		// Esto ayuda a mantener la arquitectura limpia y predecible
 	}
 
 }
@@ -178,7 +188,7 @@ func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
 	return cod_op, variables
 }
 
-func ExecuteInstruccion(proceso *Proceso, cod_op string, variables []string) {
+func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 	switch cod_op {
 	case NOOP:
 		clientUtils.Logger.Info("## Ejecutando NOOP")
@@ -214,7 +224,7 @@ func ExecuteInstruccion(proceso *Proceso, cod_op string, variables []string) {
 
 }
 
-func Syscall(proceso *Proceso, cod_op string, variables []string) {
+func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 	switch cod_op {
 	case IO:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar IO")
