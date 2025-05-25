@@ -16,6 +16,8 @@ import (
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
 
+var stop = true
+
 // Listas globales para almacenar las CPUs e IOs conectadas
 
 var cpusLibres CpuList
@@ -632,8 +634,11 @@ func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
 	pcp.execState.Agregar(proceso)
 	//Envío del proceso a CPU
 	CPUlibre.PIDenEjecucion = proceso.PID
-	CPUlibre.enviarProceso(proceso.PID, proceso.PC)
+
 	cpusOcupadas.Agregar(CPUlibre)
+	println("CPU ocupada:", CPUlibre.Identificador)
+	println("CPU esta vacia:", cpusOcupadas.Vacia())
+	CPUlibre.enviarProceso(proceso.PID, proceso.PC)
 }
 
 func (pcp *PlanificadorCortoPlazo) EnviarProcesoABlocked(proceso PCB, nombreIo string) {
@@ -685,6 +690,7 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 	cpusLibres.Agregar(nuevaCpu)
 	<-sem_cpusLibres
 	clientUtils.Logger.Info(fmt.Sprintf("CPU registrada: %+v", nuevaCpu))
+
 }
 
 const (
@@ -699,8 +705,10 @@ const (
 
 // ENDPOINT PARA LAS SYSCALLS
 func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
+
 	respuesta := serverUtils.RecibirPaquetes(w, r)
 	cpuId := respuesta.Valores[CPU_ID]
+	println("CPU ID:", cpuId)
 	cpu, ok := cpusOcupadas.BuscarPorID(cpuId)
 	if !ok {
 		clientUtils.Logger.Error("Error al encontrar la cpu")
@@ -736,11 +744,11 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		IniciarProceso(respuesta.Valores[FILE_PATH], uint(tamProc))
-
 		//CPU sigue ejecutando
 		cpu.enviarProceso(proceso.PID, proceso.PC)
 		proceso.timeInCurrentState = time.Now()
 		Plp.pcp.execState.Agregar(proceso)
+		println("hola")
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
 		Plp.FinalizarProceso(proceso)
@@ -883,18 +891,21 @@ func manejarDesconexionIo(nombre string) {
 
 func IniciarProceso(filePath string, processSize uint) {
 	muProximoPID.Lock()
-	defer muProximoPID.Unlock()
+	//defer muProximoPID.Unlock()
 	nuevaPCB := PCB{PID: proximoPID, PC: 0, FilePath: filePath, ProcessSize: processSize}
 	proximoPID++
-
-	<-iniciarLargoPlazo // espera bloqueante
+	muProximoPID.Unlock()
+	for stop {
+	}
+	//<-iniciarLargoPlazo // espera bloqueante
 	Plp.RecibirNuevoProceso(nuevaPCB)
+
 }
 
 func EsperarEnter() {
 	for {
 		fmt.Println("Presione ENTER para iniciar la planificación de Largo Plazo...")
 		bufio.NewReader(os.Stdin).ReadString('\n')
-		iniciarLargoPlazo <- struct{}{}
+		stop = false
 	}
 }

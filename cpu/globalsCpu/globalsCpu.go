@@ -25,7 +25,7 @@ var CpuConfig *Config
 
 var Identificador string
 
-var ProcesoActual *Proceso
+var ProcesoActual *Proceso = &Proceso{}
 
 func SetIdentificador(nuevoId string) {
 	Identificador = nuevoId

@@ -14,7 +14,7 @@ import (
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
 
-var procesos map[int]globalsMemoria.Proceso
+var procesos map[int]globalsMemoria.Proceso = make(map[int]globalsMemoria.Proceso)
 
 // Inicia la configuración leyendo el archivo JSON correspondiente
 
@@ -90,6 +90,7 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 
 	if EspacioLibre() < size {
 		http.Error(w, "Espacio en memoria insuficiete.", http.StatusBadRequest)
+		return
 	}
 	procesos[pid] = globalsMemoria.Proceso{Instrucciones: listaInstrucciones, Size: size}
 
@@ -146,7 +147,7 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	pc, err := strconv.Atoi(pedido.Valores[PID])
+	pc, err := strconv.Atoi(pedido.Valores[PC])
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear PC")
 		http.Error(w, "Bad Request", http.StatusBadRequest)

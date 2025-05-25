@@ -94,24 +94,39 @@ func ConfigurarLogger(nombreArchivo string) {
 }
 
 // Busca el primer puerto disponible a partir de un puerto base
-func EncontrarPuertoDisponible(ip string, puertoInicial int) (int, error) {
+/*func EncontrarPuertoDisponible(ip string, puertoInicial int) (int, error) {
+puerto := puertoInicial
+for {
+	addr := ip + ":" + strconv.Itoa(puerto)
+
+	// Intentamos escuchar en esa dirección
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		// Si da error, ese puerto está ocupado, pasamos al siguiente
+		puerto++
+		continue
+	}
+
+	// Si llegamos acá, el puerto está libre → lo liberamos
+	_ = ln.Close()
+
+	// Devolvemos ese puerto como disponible
+	return puerto, nil
+}}*/
+
+func EncontrarPuertoDisponible(ip string, puertoInicial int) (net.Listener, int, error) {
 	puerto := puertoInicial
 	for {
 		addr := ip + ":" + strconv.Itoa(puerto)
 
-		// Intentamos escuchar en esa dirección
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
-			// Si da error, ese puerto está ocupado, pasamos al siguiente
 			puerto++
 			continue
 		}
 
-		// Si llegamos acá, el puerto está libre → lo liberamos
-		_ = ln.Close()
-
-		// Devolvemos ese puerto como disponible
-		return puerto, nil
+		// NO cerramos ln → lo usamos
+		return ln, puerto, nil
 	}
 }
 
