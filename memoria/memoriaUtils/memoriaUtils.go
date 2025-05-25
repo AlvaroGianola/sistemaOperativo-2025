@@ -79,7 +79,7 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 	//archivos sin chequear si el pid ya existe
 
 	//esto va a leer el path
-	instruccionesSinParsear, err := os.ReadFile(pedido.Valores[FILE_PATH])
+	instruccionesSinParsear, err := os.ReadFile(globalsMemoria.MemoriaConfig.ScriptsPath + pedido.Valores[FILE_PATH])
 	if err != nil {
 		clientUtils.Logger.Error("Error al leer el path:", "error", err)
 		http.Error(w, "Path invalido", http.StatusBadRequest)
