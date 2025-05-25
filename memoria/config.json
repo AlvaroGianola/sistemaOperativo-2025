@@ -9,5 +9,7 @@
     "swapfile_path": "/home/utnso/swapfile.bin",
     "swap_delay": 15000,
     "log_level": "DEBUG",
-    "dump_path": "/home/utnso/dump_files/"
+    "dump_path": "/home/utnso/dump_files/",
+    "scripts_path": "/home/utnso/scripts/"
 }
+

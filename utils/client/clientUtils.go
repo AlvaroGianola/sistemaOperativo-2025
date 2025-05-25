@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net"
@@ -93,24 +94,39 @@ func ConfigurarLogger(nombreArchivo string) {
 }
 
 // Busca el primer puerto disponible a partir de un puerto base
-func EncontrarPuertoDisponible(ip string, puertoInicial int) (int, error) {
+/*func EncontrarPuertoDisponible(ip string, puertoInicial int) (int, error) {
+puerto := puertoInicial
+for {
+	addr := ip + ":" + strconv.Itoa(puerto)
+
+	// Intentamos escuchar en esa dirección
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		// Si da error, ese puerto está ocupado, pasamos al siguiente
+		puerto++
+		continue
+	}
+
+	// Si llegamos acá, el puerto está libre → lo liberamos
+	_ = ln.Close()
+
+	// Devolvemos ese puerto como disponible
+	return puerto, nil
+}}*/
+
+func EncontrarPuertoDisponible(ip string, puertoInicial int) (net.Listener, int, error) {
 	puerto := puertoInicial
 	for {
 		addr := ip + ":" + strconv.Itoa(puerto)
 
-		// Intentamos escuchar en esa dirección
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
-			// Si da error, ese puerto está ocupado, pasamos al siguiente
 			puerto++
 			continue
 		}
 
-		// Si llegamos acá, el puerto está libre → lo liberamos
-		_ = ln.Close()
-
-		// Devolvemos ese puerto como disponible
-		return puerto, nil
+		// NO cerramos ln → lo usamos
+		return ln, puerto, nil
 	}
 }
 
@@ -129,4 +145,28 @@ func EnviarPaqueteConRespuesta(ip string, puerto int, direccion string, paquete 
 	}
 
 	return resp
+}
+
+func EnviarPaqueteConRespuestaBody(ip string, puerto int, direccion string, paquete Paquete) []byte {
+	body, err := json.Marshal(paquete)
+	if err != nil {
+		log.Printf("error codificando mensajes: %s", err.Error())
+		return nil
+	}
+
+	url := fmt.Sprintf("http://%s:%d/%s", ip, puerto, direccion)
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		log.Printf("error enviando mensajes a ip:%s puerto:%d", ip, puerto)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	respuesta, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("error leyendo respuesta del body: %s", err.Error())
+		return nil
+	}
+
+	return respuesta
 }
