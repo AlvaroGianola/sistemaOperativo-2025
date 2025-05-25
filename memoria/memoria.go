@@ -21,7 +21,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Endpoints que reciben peticiones desde Kernel
-	mux.HandleFunc("/iniciarProceso", memoriaUtils.InciarProceso)
+	mux.HandleFunc("/iniciarProceso", memoriaUtils.IniciarProceso)
 	mux.HandleFunc("/finalizarProceso", memoriaUtils.FinalizarProceso)
 
 	// Endpoints que reciben peticiones desde CPU
