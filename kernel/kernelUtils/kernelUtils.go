@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
 
-	globalskernel "github.com/sisoputnfrba/tp-golang/kernel/globalsKernel"
+	globalsKernel "github.com/sisoputnfrba/tp-golang/kernel/globalsKernel"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
+
 
 // Listas globales para almacenar las CPUs e IOs conectadas
 
@@ -39,10 +39,7 @@ func IniciarConfiguracion(filePath string) *globalskernel.Config {
 	defer configFile.Close()
 
 	jsonParser := json.NewDecoder(configFile)
-	err = jsonParser.Decode(config)
-	if err != nil {
-		panic("Error al decodificar config: " + err.Error())
-	}
+	jsonParser.Decode(&config)
 
 	return config
 }
@@ -158,8 +155,6 @@ func (cl *CpuList) Vacia() bool {
 	defer cl.mu.Unlock()
 	return len(cl.cpus) == 0
 }
-
-// Struct y funciones para IO
 
 type Io struct {
 	Nombre            string
@@ -672,7 +667,7 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 
 	puerto, err := strconv.Atoi(paquete.Valores[2])
 	if err != nil {
-		clientUtils.Logger.Error("Error al parsear puerto de CPU")
+		clientUtils.Logger.Info("Error al parsear puerto de CPU")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -700,28 +695,11 @@ const (
 
 // ENDPOINT PARA LAS SYSCALLS
 func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
-	respuesta := serverUtils.RecibirPaquetes(w, r)
-	cpuId := respuesta.Valores[CPU_ID]
-	cpu, ok := cpusOcupadas.BuscarPorID(cpuId)
-	if !ok {
-		clientUtils.Logger.Error("Error al encontrar la cpu")
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
-	}
+	resultados := serverUtils.RecibirPaquetes(w, r)
 
-	// saco el proceso de EXEC y acumulo cuanto tiempo estuvo ejecutando
-	proceso, ok := Plp.pcp.execState.BuscarYSacarPorPID(cpu.PIDenEjecucion)
-	proceso.MT.execTime += proceso.timeInState()
-	if !ok {
-		clientUtils.Logger.Error("Error al encontrar el proceso en ejecucion")
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
-	}
-
-	pcActualizado, err := strconv.Atoi(respuesta.Valores[PC])
-	if err != nil {
-		clientUtils.Logger.Error("Error al parsear PC del proceso")
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+	if len(resultados.Valores) == 0 {
+		clientUtils.Logger.Warn("Resultado vacío")
+		http.Error(w, "Resultado sin datos", http.StatusBadRequest)
 		return
 	}
 	proceso.PC = uint(pcActualizado)
@@ -826,10 +804,7 @@ const (
 	PID
 )
 
-func ResultadoIos(w http.ResponseWriter, r *http.Request) {
-	paquete := serverUtils.RecibirPaquetes(w, r)
-	nombre := paquete.Valores[NOMBRE]
-	ioPid, err := strconv.Atoi(paquete.Valores[PID])
+	puerto, err := strconv.Atoi(paquete.Valores[2])
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear PID de IO")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -855,11 +830,10 @@ func ResultadoIos(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func manejarPendientesIo(nombre string) {
-	io, ok := iosRegistradas.Obtener(nombre)
-	if !ok {
-		clientUtils.Logger.Error("Error al buscar IO por nombre")
-		return
+	nuevaIo := Io{
+		Nombre: paquete.Valores[0],
+		Ip:     paquete.Valores[1],
+		Puerto: puerto,
 	}
 	if io.TieneProcesosEsperando() {
 		pedido, ok := io.SacarProximoProceso()

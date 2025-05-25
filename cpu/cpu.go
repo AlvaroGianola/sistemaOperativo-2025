@@ -22,12 +22,25 @@ func main() {
 		fmt.Println("Error: se debe pasar el identificador de la CPU como argumento")
 		os.Exit(1)
 	}
+
+	globalscpu.SetIdentificador(indentificador)
+
 	// Inicializa el logger para registrar los eventos del módulo CPU
 	clientUtils.ConfigurarLogger("cpu" + indentificador + ".log")
 
+	//-----------------------------------
+	//Inicializo proceso a modo de prueba
+	proceso := cpuUtils.Proceso{
+		Pid: 1,
+		Pc:  0,
+	}
+
+	cpuUtils.HandleProceso(&proceso)
+	//------------------------------------
+
 	// Crea un enrutador HTTP (mux) y registra los endpoints que atenderá la CPU
 	mux := http.NewServeMux()
-	mux.HandleFunc("/recibirProceso", cpuUtils.RecibirProceso)
+	mux.HandleFunc("/dispatch", cpuUtils.RecibirProceso)
 	mux.HandleFunc("/recibirInterrupcion", cpuUtils.RecibirInterrupcion)
 
 	puertoLibre, err := clientUtils.EncontrarPuertoDisponible(globalscpu.CpuConfig.IpCpu, globalscpu.CpuConfig.PortCpu)

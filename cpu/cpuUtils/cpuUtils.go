@@ -3,14 +3,30 @@ package cpuUtils
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
+	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
+)
+
+const (
+	// Constantes para los códigos de operación
+	NOOP        = "NOOP"
+	WRITE       = "WRITE"
+	READ        = "READ"
+	GOTO        = "GOTO"
+	IO          = "IO"
+	INIT_PROC   = "INIT_PROC"
+	DUMP_MEMORY = "DUMP_MEMORY"
+	EXIT        = "EXIT"
+	// Constantes para los tipos de interrupción
+	INVALID = "INVALID"
 )
 
 // Inicializa la configuración leyendo el archivo json indicado
@@ -37,24 +53,33 @@ type Proceso struct {
 // Recibe un proceso del Kernel y lo loguea
 func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("Error leyendo body: %s", err.Error())
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
+	paquete := serverUtils.RecibirPaquetes(w, r)
 
-	var datos Proceso
-	err = json.Unmarshal(body, &datos)
+	spid := paquete.Valores[0]
+	spc := paquete.Valores[1]
+
+	pid, err := strconv.Atoi(spid)
 	if err != nil {
-		log.Printf("Error parseando JSON: %s", err.Error())
-		w.WriteHeader(http.StatusBadRequest)
+		clientUtils.Logger.Error("Error al convertir PID a int")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	// Log obligatorio simulado: FETCH
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - FETCH - Program Counter: %d", datos.Pid, datos.Pc))
+	pc, err := strconv.Atoi(spc)
+	if err != nil {
+		clientUtils.Logger.Error("Error al convertir PC a int")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	clientUtils.Logger.Info(fmt.Sprintf("## Llega proceso - PID: %d, PC: %d", pid, pc))
+	proceso := &Proceso{
+		Pid: pid,
+		Pc:  pc,
+	}
+
+	HandleProceso(proceso)
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -71,14 +96,155 @@ func EnviarHandshakeAKernel(indentificador string, puertoLibre int) {
 
 // handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
 // Por ahora queda como placeholder para mantener la estructura modular
-func handleProceso(proceso Proceso) {
-	// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
-	// Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
-	// Esto ayuda a mantener la arquitectura limpia y predecible
+func HandleProceso(proceso *Proceso) {
+
+	for {
+		//#FETCH
+		instruccion := globalsCpu.ObtenerMix(proceso.Pc, proceso.Pid)
+		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", instruccion))
+		//#DECODE
+		cod_op, variables := DecodeInstruccion(instruccion)
+		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción decodificada: %s, con las variables %s", cod_op, variables))
+		//#EXECUTE
+		clientUtils.Logger.Info("## Ejecutando instrucción")
+		ExecuteInstruccion(proceso, cod_op, variables)
+		//#CHECK
+		//TODO
+
+		//Condicion de cierre
+		if cod_op == GOTO || cod_op == EXIT {
+			clientUtils.Logger.Info(fmt.Sprintf("## El Proceso %d terminó con motivo de %s", proceso.Pid, cod_op))
+			break
+		}
+		// Aquí se implementará el ciclo: Fetch -> Decode -> Execute -> Check Interrupt
+		// Por ahora solo lo dejamos declarado para usarlo desde RecibirProceso
+		// Esto ayuda a mantener la arquitectura limpia y predecible
+	}
+
 }
 
 // Simula la recepción de una interrupción
 func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("## Llega interrupción al puerto Interrupt")
 	w.WriteHeader(http.StatusOK)
+}
+
+//----------------------------------------------------------------------
+
+func EnviarResultadoAKernel(pc int, cod_op string, args []string) {
+	pcStr := strconv.Itoa(pc)
+
+	ids := []string{globalsCpu.Identificador, pcStr, cod_op}
+
+	valores := append(ids, args...)
+
+	resultadoStr := strings.Join(valores, " ")
+	clientUtils.Logger.Info(fmt.Sprintf("valores a enviar a kernel: %s", resultadoStr))
+
+	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "resultadoProcesos")
+}
+
+func Decode(instruccion string) (op string, args []string) {
+	parts := strings.Fields(instruccion)
+	if len(parts) == 0 {
+		return "", []string{}
+	}
+	return parts[0], parts[1:]
+}
+
+func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
+	cod_op, variables = Decode(instruccion)
+
+	switch cod_op {
+	case NOOP, EXIT, DUMP_MEMORY:
+		if len(variables) != 0 {
+			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion %s incorrecto, no se deben ingresar parametros para esta instruccion", cod_op)
+		}
+	case GOTO:
+		cod_op = GOTO
+		if len(variables) != 1 {
+			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion GOTO incorrecto, se debe ingresar 1 parametro")
+		}
+	case READ, WRITE, IO, INIT_PROC:
+		if len(variables) != 2 {
+			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion %s incorrecto, se deben ingresar 2 parametros", cod_op)
+		}
+	default:
+		if len(variables) > 3 {
+			clientUtils.Logger.Error("Instrucción inválida")
+			cod_op = INVALID
+		}
+	}
+	return cod_op, variables
+}
+
+func ExecuteInstruccion(proceso *Proceso, cod_op string, variables []string) {
+	switch cod_op {
+	case NOOP:
+		clientUtils.Logger.Info("## Ejecutando NOOP")
+		time.Sleep(2 * time.Second)
+		proceso.Pc++
+	case WRITE:
+		clientUtils.Logger.Info("## Ejecutando WRITE")
+		direccion := variables[0]
+		dato := variables[1]
+		writeMemoria(proceso.Pid, direccion, dato)
+		proceso.Pc++
+	case READ:
+		clientUtils.Logger.Info("## Ejecutando READ")
+		direccion := variables[0]
+		tamanio := variables[1]
+		readMemoria(proceso.Pid, direccion, tamanio)
+		proceso.Pc++
+	case GOTO:
+		clientUtils.Logger.Info("## Ejecutando GOTO")
+		nuevoPC, err := strconv.Atoi(variables[0])
+		if err != nil {
+			clientUtils.Logger.Warn("GOTO: argumento inválido, no es un número")
+			break
+		}
+		proceso.Pc = nuevoPC
+	default:
+		if cod_op != IO && cod_op != INIT_PROC && cod_op != DUMP_MEMORY && cod_op != EXIT {
+			clientUtils.Logger.Error("## Instruccion no reconocida")
+		} else {
+			Syscall(proceso, cod_op, variables)
+		}
+	}
+
+}
+
+func Syscall(proceso *Proceso, cod_op string, variables []string) {
+	switch cod_op {
+	case IO:
+		clientUtils.Logger.Info("## Llamar al sistema para ejecutar IO")
+		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
+	case INIT_PROC:
+		clientUtils.Logger.Info("## Llamar al sistema para ejecutar INIT_PROC")
+		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
+	case DUMP_MEMORY:
+		clientUtils.Logger.Info("## Llamar al sistema para ejecutar DUMP_MEMORY")
+		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
+	case EXIT:
+		clientUtils.Logger.Info("## Llamar al sistema para ejecutar EXIT")
+		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
+	default:
+		clientUtils.Logger.Error("Error, instruccion no reconocida")
+	}
+}
+
+func readMemoria(pid int, direccion string, tamanio string) {
+	// Simula leer desde memoria: loguea y muestra por pantalla
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - LECTURA - Dirección lógica: %s, Tamaño: %s", pid, direccion, tamanio))
+	fmt.Printf("[PID %d] Lectura desde memoria - Dirección: %s, Tamaño: %s\n", pid, direccion, tamanio)
+}
+
+func writeMemoria(pid int, direccion string, dato string) {
+	// Simula escribir en memoria: loguea la operación
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - ESCRITURA - Dirección lógica: %s, Dato: %s", pid, direccion, dato))
+	fmt.Printf("[PID %d] Escritura en memoria - Dirección: %s, Dato: %s\n", pid, direccion, dato)
 }

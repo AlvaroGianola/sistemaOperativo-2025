@@ -3,7 +3,6 @@ package memoriaUtils
 import (
 	"encoding/json"
 	"strings"
-
 	//"errors"
 	"net/http"
 	"os"
@@ -11,6 +10,8 @@ import (
 	globalsMemoria "github.com/sisoputnfrba/tp-golang/memoria/globalsMemoria"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
+
+var mutexProcesos sync.Mutex
 
 // Inicia la configuración leyendo el archivo JSON correspondiente
 
@@ -91,6 +92,7 @@ func ParsearInstrucciones(archivo []byte) []string {
 	return instruccionesSeparadas
 }
 
+
 func ExisteProceso(Pid int) bool {
 	for _, proceso := range globalsMemoria.ProcesosEnMemoria {
 		if proceso.Pid == Pid {
@@ -148,6 +150,7 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Body inválido", http.StatusBadRequest)
 		return
 	}
+
 	globalsMemoria.MutexProcesos.Lock()
 	defer globalsMemoria.MutexProcesos.Unlock()
 
@@ -187,6 +190,6 @@ func EspacioLibre() int {
 	return 2048
 }
 
-func Swapear() error {
+func Swapear(*http.Request) error { // nose bien si esto es asi siquiera veremos dijo el ciego
 	return nil
 }
