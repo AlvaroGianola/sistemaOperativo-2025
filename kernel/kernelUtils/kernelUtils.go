@@ -1,15 +1,15 @@
 package kernelUtils
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"sort"
 	"strconv"
-	"time"
-	"bufio"
 	"sync"
+	"time"
 
 	globalskernel "github.com/sisoputnfrba/tp-golang/kernel/globalsKernel"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
@@ -21,11 +21,13 @@ import (
 var cpusLibres CpuList
 var cpusOcupadas CpuList
 var iosRegistradas = IoMap{ios: make(map[string]Io)}
+var sem_cpusLibres = make(chan int)
 
 // PID para nuevos procesos
 var proximoPID uint = 0
 var muProximoPID sync.Mutex
 var Plp PlanificadorLargoPlazo
+var iniciarLargoPlazo = make(chan struct{})
 
 func IniciarConfiguracion(filePath string) *globalskernel.Config {
 	config := &globalskernel.Config{} // Aca creamos el contenedor donde irá el JSON
@@ -46,7 +48,19 @@ func IniciarConfiguracion(filePath string) *globalskernel.Config {
 }
 
 // TODO: implementar inicializacion de pcp
-func InciarPcp() PlanificadorCortoPlazo
+func InciarPcp() PlanificadorCortoPlazo {
+	var estrategia SchedulerEstrategy
+	algoritmo := globalskernel.KernelConfig.SchedulerAlgorithm
+	if algoritmo == "FIFO" {
+		estrategia = FIFOScheduler{}
+	} else if algoritmo == "SFJ" {
+		estrategia = SJFScheduler{}
+	} else if algoritmo == "SRT" {
+		estrategia = SRTScheduler{}
+	}
+
+	return PlanificadorCortoPlazo{schedulerEstrategy: estrategia}
+}
 
 func InciarPlp() PlanificadorLargoPlazo {
 	var estrategia NewAlgorithmEstrategy
@@ -57,12 +71,12 @@ func InciarPlp() PlanificadorLargoPlazo {
 		estrategia = PMCPEstrategy{}
 	}
 
-	return PlanificadorLargoPlazo{newAlgorithmEstrategy: estrategia, pcp: InciarPcp(), stop: true}
+	return PlanificadorLargoPlazo{newAlgorithmEstrategy: estrategia, pcp: InciarPcp()}
 }
 
 // Estructura para representar CPUs e IOs conectados al Kernel
 type Cpu struct {
-	Identificador string `json:"identificador"`
+	Identificador  string `json:"identificador"`
 	Ip             string `json:"ip"`
 	Puerto         int    `json:"puerto"`
 	PIDenEjecucion uint
@@ -77,7 +91,6 @@ func (cpu Cpu) enviarProceso(PID uint, PC uint) {
 
 	clientUtils.EnviarPaquete(cpu.Ip, cpu.Puerto, endpoint, paquete)
 }
-
 
 type CpuList struct {
 	cpus []Cpu
@@ -155,7 +168,7 @@ type Io struct {
 	ocupada           bool
 	conectada         bool
 	procesosEsperando []PedidoIo
-	mu sync.Mutex
+	mu                sync.Mutex
 }
 
 type PedidoIo struct {
@@ -205,7 +218,7 @@ func (io *Io) EstaOcupada() bool {
 	return io.ocupada
 }
 
-func (io *Io) MarcarDesconectada(){
+func (io *Io) MarcarDesconectada() {
 	io.mu.Lock()
 	defer io.mu.Unlock()
 	io.conectada = false
@@ -262,7 +275,6 @@ func (im *IoMap) MarcarDesconectada(nombre string) {
 		im.ios[nombre] = io
 	}
 }
-
 
 //-------------- Estructuras generales para el manejo de estados -------------------
 
@@ -399,7 +411,7 @@ func (f FIFOEstrategy) manejarIngresoDeProceso(nuevoProceso PCB, plp *Planificad
 
 func (f FIFOEstrategy) manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo) {
 	// chequea una copia del mismo, si puede irse lo desencola
-	if(plp.newState.Vacia()){
+	if plp.newState.Vacia() {
 		return
 	}
 	proximoProceso := plp.newState.VizualizarProximo()
@@ -419,7 +431,7 @@ func (p PMCPEstrategy) manejarIngresoDeProceso(nuevoProceso PCB, plp *Planificad
 
 func (p PMCPEstrategy) manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo) {
 	plp.newState.OrdenarPorPMC()
-	if(plp.newState.Vacia()){
+	if plp.newState.Vacia() {
 		return
 	}
 	proximoProceso := plp.newState.VizualizarProximo()
@@ -435,7 +447,6 @@ type PlanificadorLargoPlazo struct {
 	exitState             PCBList
 	newAlgorithmEstrategy NewAlgorithmEstrategy
 	pcp                   PlanificadorCortoPlazo
-	stop				  bool
 }
 
 func (plp *PlanificadorLargoPlazo) RecibirNuevoProceso(nuevoProceso PCB) {
@@ -485,7 +496,7 @@ func (plp *PlanificadorLargoPlazo) FinalizarProceso(proceso PCB) {
 
 		// TODO: aca iria mediano plazo chequear los susps ready (Checkpoint 3)
 		// si no chequea new
-		if pmp.suspReadyState.Vacia(){
+		if pmp.suspReadyState.Vacia() {
 			plp.newAlgorithmEstrategy.manejarLiberacionDeProceso(plp)
 		}
 
@@ -501,13 +512,13 @@ func (plp PlanificadorLargoPlazo) loggearMetricas(proceso PCB) {
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Finaliza el proceso", proceso.PID))
 
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Métricas de estado: NEW %d %.2f, READY %d %.2f, EXEC %d %.2f, BLOCKED  %d %.2f, SUSP_READY %d %.2f, SUSP_BLOCKED %d %.2f, EXIT %d %.2f",
-	 proceso.PID, proceso.ME.newCount, proceso.MT.newTime, 
-	 proceso.ME.readyCount, proceso.MT.readyTime, 
-	 proceso.ME.execCount, proceso.MT.execTime, 
-	 proceso.ME.blockedCount, proceso.MT.blockedTime, 
-	 proceso.ME.suspReadyCount,proceso.MT.suspReadyTime,
-	 proceso.ME.suspBlockedCount, proceso.MT.suspBlockedTime,
-	 proceso.ME.exitCount, proceso.MT.exitTime))
+		proceso.PID, proceso.ME.newCount, proceso.MT.newTime,
+		proceso.ME.readyCount, proceso.MT.readyTime,
+		proceso.ME.execCount, proceso.MT.execTime,
+		proceso.ME.blockedCount, proceso.MT.blockedTime,
+		proceso.ME.suspReadyCount, proceso.MT.suspReadyTime,
+		proceso.ME.suspBlockedCount, proceso.MT.suspBlockedTime,
+		proceso.ME.exitCount, proceso.MT.exitTime))
 }
 
 // pedido de inicialización de proceso devuelve si Memoria tiene espacio suficiente para inicializarlo
@@ -592,10 +603,10 @@ type SJFScheduler struct {
 
 func (s SJFScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo)
 
-type SJFDesScheduler struct {
+type SRTScheduler struct {
 }
 
-func (sd SJFDesScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo)
+func (sd SRTScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo)
 
 type PlanificadorCortoPlazo struct {
 	readyState         PCBList
@@ -607,9 +618,9 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso PCB) {
 	proceso.timeInCurrentState = time.Now()
 	proceso.ME.readyCount++
 	pcp.readyState.Agregar(proceso)
-	if !cpusLibres.Vacia(){
-		pcp.schedulerEstrategy.selecionarProximoAEjecutar(pcp)
-	}
+
+	sem_cpusLibres <- 0
+	pcp.schedulerEstrategy.selecionarProximoAEjecutar(pcp)
 }
 
 func (pcp *PlanificadorCortoPlazo) ejecutar(proceso PCB) {
@@ -631,7 +642,7 @@ func (pcp PlanificadorCortoPlazo) EnviarProcesoABlocked(proceso PCB, nombreIo st
 	// Log del cambio de estado EXEC → BLOCKED
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado EXEC al estado BLOCKED", proceso.PID))
 	clientUtils.Logger.Info(fmt.Sprintf(`## (%d) - Bloqueado por IO: %s`, proceso.PID, nombreIo))
-	
+
 	pmp.RecibirProceso(proceso)
 }
 
@@ -668,14 +679,14 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 
 	nuevaCpu := Cpu{
 		Identificador: paquete.Valores[0],
-		Ip:             paquete.Valores[1],
-		Puerto:         puerto,
+		Ip:            paquete.Valores[1],
+		Puerto:        puerto,
 	}
 
 	cpusLibres.Agregar(nuevaCpu)
+	<-sem_cpusLibres
 	clientUtils.Logger.Info(fmt.Sprintf("CPU registrada: %+v", nuevaCpu))
 }
-
 
 const (
 	CPU_ID = iota
@@ -686,7 +697,8 @@ const (
 	NOMBRE_IO = FILE_PATH
 	TIME      = TAM_PROC
 )
-// ENDPOINT PARA LAS SYSCALLS 
+
+// ENDPOINT PARA LAS SYSCALLS
 func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	respuesta := serverUtils.RecibirPaquetes(w, r)
 	cpuId := respuesta.Valores[CPU_ID]
@@ -714,10 +726,9 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	}
 	proceso.PC = uint(pcActualizado)
 
-
 	//--------------------------- Manejo de las distintas syscalls ----------------------------------
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: %s", proceso.PID, respuesta.Valores[MOTIVO_DEVOLUCION]))
-	
+
 	if respuesta.Valores[MOTIVO_DEVOLUCION] == "INIT_PROC" {
 		tamProc, err := strconv.Atoi(respuesta.Valores[TAM_PROC])
 		if err != nil {
@@ -736,15 +747,15 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		Plp.FinalizarProceso(proceso)
 		cpusOcupadas.SacarPorID(cpu.Identificador)
 		cpusLibres.Agregar(*cpu)
-		Plp.pcp.schedulerEstrategy.selecionarProximoAEjecutar(&Plp.pcp)
-		
+		<-sem_cpusLibres
+
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DUMP_MEMORY" {
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "IO" {
 		manejarIo(respuesta, proceso)
 		cpusOcupadas.SacarPorID(cpu.Identificador)
 		cpusLibres.Agregar(*cpu)
-		Plp.pcp.schedulerEstrategy.selecionarProximoAEjecutar(&Plp.pcp)
+		<-sem_cpusLibres
 	} else {
 		clientUtils.Logger.Error("Error, motivo de devolución de proceso desconocido")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -763,7 +774,7 @@ func manejarIo(respuesta serverUtils.Paquete, proceso PCB) {
 	}
 	io, ok := iosRegistradas.Obtener(nombre)
 	if ok {
-		Plp.pcp.EnviarProcesoABlocked(proceso,nombre)
+		Plp.pcp.EnviarProcesoABlocked(proceso, nombre)
 		if io.EstaOcupada() || !io.EstaConectada() {
 			io.AgregarPedido(PedidoIo{PID: proceso.PID, time: time})
 		} else {
@@ -803,13 +814,13 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 			ocupada:   false,
 			conectada: true,
 		}
-		
+
 		iosRegistradas.Agregar(nuevaIo)
 		clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %+v", nuevaIo))
 	}
 }
 
-const(
+const (
 	NOMBRE = iota
 	MOTIVO_DEVOLUCION_IO
 	PID
@@ -824,7 +835,7 @@ func ResultadoIos(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	
+
 	proceso, ok := pmp.blockedState.BuscarYSacarPorPID(uint(ioPid))
 	proceso.MT.blockedTime += proceso.timeInState()
 	if !ok {
@@ -832,7 +843,7 @@ func ResultadoIos(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	
+
 	//TODO:3er checkpoint enviar a susp ready en vez de ready
 	if paquete.Valores[MOTIVO_DEVOLUCION_IO] == "Fin" {
 		manejarPendientesIo(nombre)
@@ -850,14 +861,14 @@ func manejarPendientesIo(nombre string) {
 		clientUtils.Logger.Error("Error al buscar IO por nombre")
 		return
 	}
-	if io.TieneProcesosEsperando() {		
+	if io.TieneProcesosEsperando() {
 		pedido, ok := io.SacarProximoProceso()
 		if !ok {
 			clientUtils.Logger.Error("Error al obtener el proximo proceso de io")
 			return
 		}
 		io.enviarProceso(pedido.PID, pedido.time)
-	}else{
+	} else {
 		io.MarcarLibre()
 	}
 }
@@ -876,11 +887,15 @@ func IniciarProceso(filePath string, processSize uint) {
 	defer muProximoPID.Unlock()
 	nuevaPCB := PCB{PID: proximoPID, PC: 0, FilePath: filePath, ProcessSize: processSize}
 	proximoPID++
-	// hasta aca
-	for(Plp.stop){
-		fmt.Println("Presione ENTER para iniciar la planificación de Largo Plazo...")
-		bufio.NewReader(os.Stdin).ReadString('\n') // Espera ENTER
-		Plp.stop = false
-	}
+
+	<-iniciarLargoPlazo // espera bloqueante
 	Plp.RecibirNuevoProceso(nuevaPCB)
+}
+
+func EsperarEnter() {
+	for {
+		fmt.Println("Presione ENTER para iniciar la planificación de Largo Plazo...")
+		bufio.NewReader(os.Stdin).ReadString('\n')
+		iniciarLargoPlazo <- struct{}{}
+	}
 }
