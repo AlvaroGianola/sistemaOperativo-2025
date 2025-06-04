@@ -13,40 +13,37 @@ import (
 )
 
 func main() {
-	// Inicializa el logger
-	clientUtils.ConfigurarLogger("io.log")
-
 	// Carga la configuración
 	ioGlobalUtils.IoConfig = ioUtils.IniciarConfiguracion("config.json")
 
 	// Verifica argumentos
-	args := os.Args
-	if len(args) < 2 {
+	if len(os.Args) < 2 {
 		fmt.Println("Error: se debe pasar el nombre del dispositivo IO como argumento")
 		os.Exit(1)
 	}
-	ioUtils.Nombre = args[1]
+	ioUtils.Nombre = os.Args[1]
 
-	// Encuentra un puerto libre
-	puertoLibre, err := clientUtils.EncontrarPuertoDisponible(ioGlobalUtils.IoConfig.IPIo, ioGlobalUtils.IoConfig.PortIO)
+	// Inicializa el logger
+	clientUtils.ConfigurarLogger("io" + ioUtils.Nombre + ".log")
+
+	// Encuentra un puerto libre y listener ya abierto
+	listener, puertoLibre, err := clientUtils.EncontrarPuertoDisponible(ioGlobalUtils.IoConfig.IPIo, ioGlobalUtils.IoConfig.PortIO)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("[IO] Servidor iniciado en puerto %d para dispositivo %s\n", puertoLibre, ioUtils.Nombre)
 
 	// Handshake al Kernel
 	ioUtils.EnviarHandshakeAKernel(ioUtils.Nombre, puertoLibre)
 
+	// Registrar endpoint
 	mux := http.NewServeMux()
 	mux.HandleFunc("/recibirPeticion", ioUtils.RecibirPeticion)
-
-	direccion := fmt.Sprintf("%s:%d", ioGlobalUtils.IoConfig.IPIo, puertoLibre)
-	fmt.Printf("[IO] Servidor iniciado en puerto %d para dispositivo %s\n", puertoLibre, ioUtils.Nombre)
 
 	// Capturar señales SIGINT y SIGTERM
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	// Avisar al Kernel si se recibe una señal
 	go func() {
 		<-sigs
 		fmt.Println("[IO] Señal de apagado recibida. Avisando al Kernel...")
@@ -54,5 +51,9 @@ func main() {
 		os.Exit(0)
 	}()
 
-	http.ListenAndServe(direccion, mux)
+	// Servir usando el listener
+	err = http.Serve(listener, mux)
+	if err != nil {
+		panic(err)
+	}
 }

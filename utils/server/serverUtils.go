@@ -25,9 +25,6 @@ func RecibirPaquetes(w http.ResponseWriter, r *http.Request) Paquete {
 		return Paquete{}
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
-
 	return paquete
 }
 
@@ -45,6 +42,4 @@ func RecibirMensaje(w http.ResponseWriter, r *http.Request) {
 	log.Println("Me llego un mensaje de un cliente")
 	log.Printf("%+v\n", mensaje)
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
 }

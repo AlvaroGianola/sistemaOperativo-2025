@@ -17,6 +17,7 @@ func main() {
 
 	// Carga la configuración desde el archivo config.json
 	globalsKernel.KernelConfig = kernelUtils.IniciarConfiguracion("config.json")
+
 	kernelUtils.Plp = kernelUtils.InciarPlp()
 
 	args := os.Args
@@ -39,7 +40,7 @@ func main() {
 	// IOs envían handshake a /ios
 	mux.HandleFunc("/ios", kernelUtils.RegistrarIo)
 
-	// aca las IOs mandan su estado desconectada o termine
+	// IOs envian resultados a /resultadoIos
 	mux.HandleFunc("/resultadoIos", kernelUtils.ResultadoIos)
 
 	// Levanta el servidor en el puerto definido en el archivo de configuración
@@ -47,7 +48,7 @@ func main() {
 	fmt.Printf("[Kernel] Servidor HTTP escuchando en puerto %d...\n", globalsKernel.KernelConfig.PortKernel)
 
 	go kernelUtils.EsperarEnter()
-	go kernelUtils.IniciarProceso(filePath, uint(tamProc))
+	go kernelUtils.IniciarKernel(filePath, uint(tamProc))
 
 	err = http.ListenAndServe(direccion, mux)
 	if err != nil {

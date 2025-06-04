@@ -11,40 +11,38 @@ import (
 )
 
 func main() {
-
-	// Carga la configuración desde el archivo config.json
-	globalscpu.CpuConfig = cpuUtils.IniciarConfiguracion("config.json")
-
-	args := os.Args
-
-	indentificador := args[1]
-	if len(args) < 2 {
+	// Validar argumentos
+	if len(os.Args) < 2 {
 		fmt.Println("Error: se debe pasar el identificador de la CPU como argumento")
 		os.Exit(1)
 	}
-	// Inicializa el logger para registrar los eventos del módulo CPU
-	clientUtils.ConfigurarLogger("cpu" + indentificador + ".log")
+	identificador := os.Args[1]
 
-	// Crea un enrutador HTTP (mux) y registra los endpoints que atenderá la CPU
+	// Configurar CPU
+	globalscpu.CpuConfig = cpuUtils.IniciarConfiguracion("config.json")
+	globalscpu.SetIdentificador(identificador)
+
+	// Configurar logger
+	clientUtils.ConfigurarLogger("cpu" + identificador + ".log")
+
+	// Registrar endpoints
 	mux := http.NewServeMux()
 	mux.HandleFunc("/recibirProceso", cpuUtils.RecibirProceso)
 	mux.HandleFunc("/recibirInterrupcion", cpuUtils.RecibirInterrupcion)
 
-	puertoLibre, err := clientUtils.EncontrarPuertoDisponible(globalscpu.CpuConfig.IpCpu, globalscpu.CpuConfig.PortCpu)
+	// Buscar puerto disponible y levantar servidor
+	listener, puertoLibre, err := clientUtils.EncontrarPuertoDisponible("localhost", 8004)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("[CPU %s] Escuchando en puerto %d...\n", identificador, puertoLibre)
 
-	// Envía el handshake al Kernel con los datos de IP y puerto de esta CPU
-	cpuUtils.EnviarHandshakeAKernel(indentificador, puertoLibre)
+	// Hacer handshake al Kernel
+	cpuUtils.EnviarHandshakeAKernel(identificador, puertoLibre)
 
-	// Obtiene el puerto configurado para levantar el servidor
-	direccion := fmt.Sprintf("%s:%d", globalscpu.CpuConfig.IpCpu, puertoLibre)
-	fmt.Printf("[CPU] Servidor escuchando en puerto %d...\n", puertoLibre)
-
-	err = http.ListenAndServe(direccion, mux)
+	// Servir usando el listener ya abierto
+	err = http.Serve(listener, mux)
 	if err != nil {
 		panic(err)
 	}
-
 }
