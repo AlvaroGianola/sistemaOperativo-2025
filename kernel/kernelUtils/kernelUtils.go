@@ -763,11 +763,10 @@ func (pcp *PlanificadorCortoPlazo) ejecutarConDesalojo(proceso *PCB, cpu *Cpu) {
 	cpu.enviarProceso(proceso.PID, proceso.PC)
 }
 
-func (pcp *PlanificadorCortoPlazo) EnviarProcesoABlocked(proceso *PCB, nombreIo string) {
+func (pcp *PlanificadorCortoPlazo) EnviarProcesoABlocked(proceso *PCB) {
 
 	// Log del cambio de estado EXEC → BLOCKED
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado EXEC al estado BLOCKED", proceso.PID))
-	clientUtils.Logger.Info(fmt.Sprintf(`## (%d) - Bloqueado por IO: %s`, proceso.PID, nombreIo))
 
 	pmp.RecibirProceso(proceso)
 }
@@ -804,9 +803,10 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nuevaCpu := Cpu{
-		Identificador: paquete.Valores[0],
-		Ip:            paquete.Valores[1],
-		Puerto:        puerto,
+		Identificador:            paquete.Valores[0],
+		Ip:                       paquete.Valores[1],
+		Puerto:                   puerto,
+		sem_interrupcionAtendida: make(chan struct{}),
 	}
 
 	cpusLibres.Agregar(nuevaCpu)
@@ -872,9 +872,6 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		go cpu.enviarProceso(proceso.PID, proceso.PC)
 
 		go IniciarProceso(respuesta.Valores[FILE_PATH], uint(tamProc))
-		//CPU sigue ejecutando
-
-		println("se agrego despues de init")
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: EXIT", proceso.PID))
@@ -885,6 +882,10 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DUMP_MEMORY" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: DUMP_MEMORY", proceso.PID))
+		go ManejarMemoryDump(proceso)
+		cpusOcupadas.SacarPorID(cpu.Identificador)
+		cpusLibres.Agregar(*cpu)
+		<-sem_cpusLibres
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "IO" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: IO", proceso.PID))
@@ -907,6 +908,47 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func EnviarMemoryDump(PID uint) bool {
+	valores := []string{
+		strconv.Itoa(int(PID)),
+	}
+
+	// Construimos el paquete
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	// Obtenemos IP y puerto de Memoria desde la config global del Kernel
+	ip := globalskernel.KernelConfig.IpMemory
+	puerto := globalskernel.KernelConfig.PortMemory
+	endpoint := "memoryDump"
+
+	resp := clientUtils.EnviarPaqueteConRespuesta(ip, puerto, endpoint, paquete)
+
+	// Validamos la respuesta (por ahora asumimos éxito si hay respuesta 200 OK)
+	if resp != nil && resp.StatusCode == http.StatusOK {
+		clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d realizo correctamente un memory dump", PID))
+		return true
+	}
+
+	clientUtils.Logger.Warn(fmt.Sprintf("Error al relizar el memory dump del proceso PID %d ", PID))
+	return false
+}
+
+func ManejarMemoryDump(proceso *PCB) {
+	Plp.pcp.EnviarProcesoABlocked(proceso)
+	respuesta := EnviarMemoryDump(proceso.PID)
+	proceso, ok := pmp.blockedState.BuscarYSacarPorPID(proceso.PID)
+	proceso.MT.blockedTime += proceso.timeInState()
+	if !ok {
+		clientUtils.Logger.Error("Error al encontrar el proceso en blocked")
+		return
+	}
+	if respuesta {
+		Plp.pcp.RecibirProceso(proceso)
+	} else {
+		Plp.FinalizarProceso(proceso)
+	}
+}
+
 func manejarIo(respuesta serverUtils.Paquete, proceso *PCB) {
 	nombre := respuesta.Valores[NOMBRE_IO]
 	time, err := strconv.Atoi(respuesta.Valores[TIME])
@@ -916,7 +958,8 @@ func manejarIo(respuesta serverUtils.Paquete, proceso *PCB) {
 	}
 	io, ok := iosRegistradas.Obtener(nombre)
 	if ok {
-		Plp.pcp.EnviarProcesoABlocked(proceso, nombre)
+		clientUtils.Logger.Info(fmt.Sprintf(`## (%d) - Bloqueado por IO: %s`, proceso.PID, nombre))
+		Plp.pcp.EnviarProcesoABlocked(proceso)
 		if io.EstaOcupada() || !io.EstaConectada() {
 			io.AgregarPedido(PedidoIo{PID: proceso.PID, time: time})
 		} else {
