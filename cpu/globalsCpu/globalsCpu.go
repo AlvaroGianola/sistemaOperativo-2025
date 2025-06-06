@@ -1,5 +1,10 @@
 package globalscpu
 
+import (
+	"sync"
+	"time"
+)
+
 type Config struct {
 	PortCpu         int    `json:"port_cpu"`
 	IpCpu           string `json:"ip_cpu"`
@@ -20,6 +25,31 @@ type Proceso struct {
 	Pid int `json:"pid"`
 	Pc  int `json:"pc"`
 }
+
+type EntradaTLB struct {
+	Pid         int
+	Pagina      int
+	Marco       int
+	UltimoUso   time.Time
+	InstanteCargado time.Time
+}
+
+type EntradaCache struct {
+	Pid       int
+	Pagina    int
+	Marco     int
+	Uso       bool
+	Modificado bool
+}
+
+var (
+	Tlb      []EntradaTLB
+	TlbMutex sync.Mutex
+
+	Cache     []EntradaCache
+	CacheMutex sync.Mutex
+	PunteroClock int = 0
+)
 
 var CpuConfig *Config
 
