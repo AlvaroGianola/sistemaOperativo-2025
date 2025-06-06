@@ -12,6 +12,8 @@ import (
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
+	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
+	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
 )
 
 const (
@@ -130,7 +132,20 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		clientUtils.Logger.Info("## Ejecutando instrucción")
 		ExecuteInstruccion(proceso, cod_op, variables)
 		//#CHECK
-		//TODO
+		// le pregunto a kernel si hay una interrupción
+		hayInterrupcion,ok := PreguntarSiHayInterrupcion()
+		if !ok {
+			clientUtils.Logger.Error("Error al preguntar si hay interrupción")
+		}else{
+			if(hayInterrupcion == "FALSE" ) {
+				clientUtils.Logger.Info("## No hay interrupción, continuando ejecución")
+			}else if (hayInterrupcion == "TRUE") {
+				clientUtils.Logger.Info("## Hay interrupción, deteniendo ejecución")
+				break
+			}
+		}
+		
+		// Si la instrucción es EXIT o INVALIDA, salimos del ciclo
 		if cod_op == EXIT {
 			clientUtils.Logger.Info("## Proceso finalizado")
 			break
@@ -143,6 +158,18 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		}
 	}
 
+}
+
+func PreguntarSiHayInterrupcion() (string, bool) {
+	valores := []string{strconv.Itoa(globalsCpu.ProcesoActual.Pid), strconv.Itoa(globalsCpu.ProcesoActual.Pc)}
+	paquete := clientUtils.Paquete{Valores: valores}
+	interrupcion := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpKernel , globalsCpu.CpuConfig.PortKernel, "recibirInterrupcion", paquete)
+
+	if interrupcion == nil {
+		clientUtils.Logger.Error("No se recibió respuesta de Kernel")
+		return "", false
+	}
+	return string(interrupcion), true
 }
 
 // Simula la recepción de una interrupción
@@ -258,14 +285,113 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 	}
 }
 
+// Escribir y Leer memoria 
+
 func readMemoria(pid int, direccion string, tamanio string) {
-	// Simula leer desde memoria: loguea y muestra por pantalla
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - LECTURA - Dirección lógica: %s, Tamaño: %s", pid, direccion, tamanio))
-	fmt.Printf("[PID %d] Lectura desde memoria - Dirección: %s, Tamaño: %s\n", pid, direccion, tamanio)
+	marco, err := TraducirDireccion(pid, direccion)
+	if err != nil {
+		clientUtils.Logger.Error(fmt.Sprintf("READ - Error al traducir dirección: %s", err))
+		return
+	}
+
+	pagina, _ := strconv.Atoi(direccion)
+	cacheUtils.AccederACache(pid, pagina, false)
+
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - LECTURA - Dirección lógica: %s → Marco físico: %d, Tamaño: %s", pid, direccion, marco, tamanio))
+	fmt.Printf("[PID %d] Lectura desde marco %d (lógica %s), tamaño %s\n", pid, marco, direccion, tamanio)
 }
 
 func writeMemoria(pid int, direccion string, dato string) {
-	// Simula escribir en memoria: loguea la operación
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - ESCRITURA - Dirección lógica: %s, Dato: %s", pid, direccion, dato))
-	fmt.Printf("[PID %d] Escritura en memoria - Dirección: %s, Dato: %s\n", pid, direccion, dato)
+	marco, err := TraducirDireccion(pid, direccion)
+	if err != nil {
+		clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al traducir dirección: %s", err))
+		return
+	}
+
+	pagina, _ := strconv.Atoi(direccion)
+	cacheUtils.AccederACache(pid, pagina, true)
+
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - ESCRITURA - Dirección lógica: %s → Marco físico: %d, Dato: %s", pid, direccion, marco, dato))
+	fmt.Printf("[PID %d] Escritura en marco %d (lógica %s), dato %s\n", pid, marco, direccion, dato)
+}
+//-----------------------------
+
+// Traduce una dirección lógica a física usando TLB (o consultando Memoria en caso de MISS)
+func TraducirDireccion(pid int, direccionLogica string) (marco int, err error) {
+	globalsCpu.TlbMutex.Lock()
+	defer globalsCpu.TlbMutex.Unlock()
+
+	pagina, err := strconv.Atoi(direccionLogica)
+	if err != nil {
+		return -1, fmt.Errorf("Dirección lógica inválida: %s", direccionLogica)
+	}
+
+	// Buscar en la TLB
+	for i, entrada := range globalsCpu.Tlb {
+		if entrada.Pid == pid && entrada.Pagina == pagina {
+			clientUtils.Logger.Info("TLB HIT - PID %d Página %d -> Marco %d", pid, pagina, entrada.Marco)
+			globalsCpu.Tlb[i].UltimoUso = time.Now()
+			return entrada.Marco, nil
+		}
+	}
+
+	// MISS: pedir a Memoria
+	clientUtils.Logger.Info(fmt.Sprintf("TLB MISS - PID %d Página %d", pid, pagina))
+	marco = ConsultarMarcoMemoria(pid, pagina)
+
+	tlbUtils.AgregarATLB(pid, pagina, marco)
+	return marco, nil
+}
+
+func ConsultarMarcoMemoria(pid int, pagina int) int {
+	marco,err := ConsultarMemoria(pid, pagina)
+	if err != nil {
+		clientUtils.Logger.Error(fmt.Sprintf("Error al consultar memoria: %s", err))
+		return -1 // Error al consultar memoria
+	}
+	clientUtils.Logger.Info(fmt.Sprintf("Consulta a Memoria - PID %d Página %d → Marco %d", pid, pagina, marco))
+	// Por ahora devuelve marco igual a número de página para simular
+	return marco
+}
+
+func ConsultarMemoria(pid int, pagina int) (int, error) {
+	valores := []string{strconv.Itoa(pid), strconv.Itoa(pagina)}
+	paquete := clientUtils.Paquete{Valores: valores}
+	marcoBytes := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpMemory, globalsCpu.CpuConfig.PortMemory, "consultarMarco", paquete)
+
+	if marcoBytes == nil {
+		return -1, fmt.Errorf("Error al convertir marco a int: %s", "No se recibió respuesta de Memoria")
+	}
+
+	marcoStr := string(marcoBytes)
+	marco, err := strconv.Atoi(marcoStr)
+	if err != nil {
+		return -1, fmt.Errorf("Error al convertir marco a int: %s", err)
+	}
+
+	return marco, nil
+}
+
+func LimpiarProceso(pid int) {
+    // Limpiar TLB
+    globalsCpu.TlbMutex.Lock()
+    nuevaTLB := []globalsCpu.EntradaTLB{}
+    for _, entrada := range globalsCpu.Tlb {
+        if entrada.Pid != pid {
+            nuevaTLB = append(nuevaTLB, entrada)
+        }
+    }
+    globalsCpu.Tlb = nuevaTLB
+    globalsCpu.TlbMutex.Unlock()
+
+    // Limpiar Cache
+    globalsCpu.CacheMutex.Lock()
+    nuevaCache := []globalsCpu.EntradaCache{}
+    for _, entrada := range globalsCpu.Cache {
+        if entrada.Pid != pid {
+            nuevaCache = append(nuevaCache, entrada)
+        }
+    }
+    globalsCpu.Cache = nuevaCache
+    globalsCpu.CacheMutex.Unlock()
 }
