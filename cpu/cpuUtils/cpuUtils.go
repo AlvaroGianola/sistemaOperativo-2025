@@ -147,12 +147,15 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		
 		// Si la instrucción es EXIT o INVALIDA, salimos del ciclo
 		if cod_op == EXIT {
+			LimpiarProceso(globalsCpu.ProcesoActual.Pid)
 			clientUtils.Logger.Info("## Proceso finalizado")
 			break
 		} else if cod_op == IO || cod_op == INIT_PROC || cod_op == DUMP_MEMORY {
+			LimpiarProceso(globalsCpu.ProcesoActual.Pid)
 			break
 		}
 		if cod_op == INVALID {
+			LimpiarProceso(globalsCpu.ProcesoActual.Pid)
 			clientUtils.Logger.Error("## Instrucción inválida, abortando ejecución")
 			break
 		}
@@ -299,6 +302,17 @@ func readMemoria(pid int, direccion string, tamanio string) {
 
 	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - LECTURA - Dirección lógica: %s → Marco físico: %d, Tamaño: %s", pid, direccion, marco, tamanio))
 	fmt.Printf("[PID %d] Lectura desde marco %d (lógica %s), tamaño %s\n", pid, marco, direccion, tamanio)
+
+	// Enviar a Memoria
+	valores := []string{strconv.Itoa(pid), strconv.Itoa(marco), tamanio}
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	clientUtils.EnviarPaquete(
+		globalsCpu.CpuConfig.IpMemory,
+		globalsCpu.CpuConfig.PortMemory,
+		"readMemoria",
+		paquete,
+	)
 }
 
 func writeMemoria(pid int, direccion string, dato string) {
@@ -313,7 +327,19 @@ func writeMemoria(pid int, direccion string, dato string) {
 
 	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - ESCRITURA - Dirección lógica: %s → Marco físico: %d, Dato: %s", pid, direccion, marco, dato))
 	fmt.Printf("[PID %d] Escritura en marco %d (lógica %s), dato %s\n", pid, marco, direccion, dato)
+
+	// Enviar a Memoria
+	valores := []string{strconv.Itoa(pid), strconv.Itoa(marco), dato}
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	clientUtils.EnviarPaquete(
+		globalsCpu.CpuConfig.IpMemory,
+		globalsCpu.CpuConfig.PortMemory,
+		"writeMemoria",
+		paquete,
+	)
 }
+
 //-----------------------------
 
 // Traduce una dirección lógica a física usando TLB (o consultando Memoria en caso de MISS)
@@ -335,7 +361,6 @@ func TraducirDireccion(pid int, direccionLogica string) (marco int, err error) {
 		}
 	}
 
-	// MISS: pedir a Memoria
 	clientUtils.Logger.Info(fmt.Sprintf("TLB MISS - PID %d Página %d", pid, pagina))
 	marco = ConsultarMarcoMemoria(pid, pagina)
 
@@ -350,7 +375,6 @@ func ConsultarMarcoMemoria(pid int, pagina int) int {
 		return -1 // Error al consultar memoria
 	}
 	clientUtils.Logger.Info(fmt.Sprintf("Consulta a Memoria - PID %d Página %d → Marco %d", pid, pagina, marco))
-	// Por ahora devuelve marco igual a número de página para simular
 	return marco
 }
 
