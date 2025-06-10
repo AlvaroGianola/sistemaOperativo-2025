@@ -37,7 +37,7 @@ type EntradaTLB struct {
 type EntradaCache struct {
 	Pid       int
 	Pagina    int
-	Marco     int
+	Contenido string
 	Uso       bool
 	Modificado bool
 }
@@ -48,10 +48,12 @@ var (
 
 	Cache     []EntradaCache
 	CacheMutex sync.Mutex
-	PunteroClock int = 0
+	PunteroClock int
 )
 
 var CpuConfig *Config
+
+var TamPagina int
 
 var Identificador string
 
