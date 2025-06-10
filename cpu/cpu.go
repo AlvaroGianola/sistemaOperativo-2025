@@ -20,6 +20,7 @@ func main() {
 
 	// Configurar CPU
 	globalscpu.CpuConfig = cpuUtils.IniciarConfiguracion("config.json")
+	cpuUtils.ObtenerTamPaginaDesdeMemoria()
 	globalscpu.SetIdentificador(identificador)
 
 	// Configurar logger
@@ -39,6 +40,8 @@ func main() {
 
 	// Hacer handshake al Kernel
 	cpuUtils.EnviarHandshakeAKernel(identificador, puertoLibre)
+	
+	//TODO: HANDSHAKE CON MEMORIA (CAMBIANDO PUERTO)
 
 	// Servir usando el listener ya abierto
 	err = http.Serve(listener, mux)
