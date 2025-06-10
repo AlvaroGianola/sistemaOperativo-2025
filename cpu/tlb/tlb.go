@@ -18,23 +18,23 @@ func AgregarATLB(pid int, pagina int, marco int) {
 
 	if len(globalsCpu.Tlb) < globalsCpu.CpuConfig.TlbEntries {
 		globalsCpu.Tlb = append(globalsCpu.Tlb, entrada)
-		clientUtils.Logger.Info("TLB Add - PID %d Página %d Marco %d", pid, pagina, marco)
+		clientUtils.Logger.Info("TLB Add", "PID", pid, "Página", pagina, "Marco", marco)
 		return
 	}
 
 	// Reemplazo por FIFO o LRU
 	switch globalsCpu.CpuConfig.TlbReplacement {
 	case "FIFO":
-		indice := buscarEntradaMasVieja()
+		indice := BuscarEntradaMasVieja()
 		globalsCpu.Tlb[indice] = entrada
 	case "LRU":
-		indice := buscarEntradaMenosUsada()
+		indice := BuscarEntradaMenosUsada()
 		globalsCpu.Tlb[indice] = entrada
 	}
-	clientUtils.Logger.Info("TLB Replace - PID %d Página %d Marco %d", pid, pagina, marco)
+	clientUtils.Logger.Info("TLB Replace", "PID", pid, "Página", pagina, "Marco", marco)
 }
 
-func buscarEntradaMasVieja() int {
+func BuscarEntradaMasVieja() int {
 	masVieja := 0
 	for i := 1; i < len(globalsCpu.Tlb); i++ {
 		if globalsCpu.Tlb[i].InstanteCargado.Before(globalsCpu.Tlb[masVieja].InstanteCargado) {
@@ -44,7 +44,7 @@ func buscarEntradaMasVieja() int {
 	return masVieja
 }
 
-func buscarEntradaMenosUsada() int {
+func BuscarEntradaMenosUsada() int {
 	menosUsada := 0
 	for i := 1; i < len(globalsCpu.Tlb); i++ {
 		if globalsCpu.Tlb[i].UltimoUso.Before(globalsCpu.Tlb[menosUsada].UltimoUso) {
