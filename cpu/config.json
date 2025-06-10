@@ -6,7 +6,7 @@
     "ip_kernel": "127.0.0.1",
     "port_kernel": 8001,
     "tlb_entries": 15,
-    "tlb_replacement": "TLB",
+    "tlb_replacement": "FIFO",
     "cache_entries": 10,
     "cache_replacement": "CLOCK",
     "cache_delay": 10,
