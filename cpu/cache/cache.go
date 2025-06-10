@@ -9,30 +9,34 @@ import (
 
 
 // Accede a la caché de páginas: simula CLOCK o CLOCK-M según config
-func AccederACache(pid int, pagina int, modificar bool) {
+func AccederACache(pid int, pagina int, modificar bool, contenido string) string {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
 
+	// Buscar en la caché
 	for i, entrada := range globalsCpu.Cache {
 		if entrada.Pid == pid && entrada.Pagina == pagina {
 			globalsCpu.Cache[i].Uso = true
 			if modificar {
 				globalsCpu.Cache[i].Modificado = true
+				globalsCpu.Cache[i].Contenido = contenido
 			}
-			clientUtils.Logger.Info(fmt.Sprintf("Cache Hit - PID %d Página %d", pid, pagina))
-			return
+			clientUtils.Logger.Info(fmt.Sprintf("Cache HIT - PID %d Página %d", pid, pagina))
+			return globalsCpu.Cache[i].Contenido
 		}
 	}
 
-	clientUtils.Logger.Info(fmt.Sprintf("Cache Miss - PID %d Página %d", pid, pagina))
-	AgregarACache(pid, pagina, modificar)
+	clientUtils.Logger.Info(fmt.Sprintf("Cache MISS - PID %d Página %d", pid, pagina))
+	AgregarACache(pid, pagina, contenido, modificar)
+	return contenido
 }
 
-func AgregarACache(pid int, pagina int, modificar bool) {
+
+func AgregarACache(pid int, pagina int, contenido string, modificar bool) {
 	entrada := globalsCpu.EntradaCache{
 		Pid:       pid,
 		Pagina:    pagina,
-		Marco:     pagina,
+		Contenido: contenido,
 		Uso:       true,
 		Modificado: modificar,
 	}
@@ -43,7 +47,6 @@ func AgregarACache(pid int, pagina int, modificar bool) {
 		return
 	}
 
-	// CLOCK o CLOCK-M
 	for {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
 		if globalsCpu.CpuConfig.CacheReplacment == "CLOCK" {
@@ -65,23 +68,27 @@ func AgregarACache(pid int, pagina int, modificar bool) {
 }
 
 func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
-	eviectada := globalsCpu.Cache[indice]
-	if eviectada.Modificado {
-		clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - PID %d Página %d (dirty) → escribe en Memoria", eviectada.Pid, eviectada.Pagina))
-		
-		//Enviar página modificada a Memoria
-		valores := []string{strconv.Itoa(eviectada.Pid), strconv.Itoa(eviectada.Pagina)}
+	evictada := globalsCpu.Cache[indice]
+
+	if evictada.Modificado {
+		clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - Página %d modificada → escribir en Memoria", evictada.Pagina))
+
+		// Simulá envío a Memoria si querés (opcional)
+		valores := []string{
+			strconv.Itoa(evictada.Pid),
+			strconv.Itoa(evictada.Pagina),
+			evictada.Contenido,
+		}
 		paquete := clientUtils.Paquete{Valores: valores}
 
 		clientUtils.EnviarPaquete(
 			globalsCpu.CpuConfig.IpMemory,
 			globalsCpu.CpuConfig.PortMemory,
-			"escribirPaginaModificada",
+			"writePaginaModificada",
 			paquete,
 		)
 	}
 
-	clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - PID %d Página %d", eviectada.Pid, eviectada.Pagina))
 	globalsCpu.Cache[indice] = nueva
-	clientUtils.Logger.Info(fmt.Sprintf("Cache Add - PID %d Página %d", nueva.Pid, nueva.Pagina))
+	clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - PID %d Página %d → Nueva entrada", nueva.Pid, nueva.Pagina))
 }
