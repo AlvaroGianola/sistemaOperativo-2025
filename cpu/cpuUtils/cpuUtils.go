@@ -12,7 +12,7 @@ import (
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
-	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
+	mmuUtils "github.com/sisoputnfrba/tp-golang/cpu/mmu"
 	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
 )
 
@@ -55,6 +55,30 @@ func IniciarConfiguracion(filePath string) *globalsCpu.Config {
 
 	return config
 }
+
+func ObtenerTamPaginaDesdeMemoria() {
+	respuesta := clientUtils.EnviarPaqueteConRespuestaBody(
+		globalsCpu.CpuConfig.IpMemory,
+		globalsCpu.CpuConfig.PortMemory,
+		"obtenerTamPagina",
+		clientUtils.Paquete{}, // sin datos
+	)
+
+	if respuesta == nil {
+		clientUtils.Logger.Error("No se pudo obtener el tamaño de página desde Memoria")
+		panic("Tamaño de página no disponible")
+	}
+
+	tamPagina, err := strconv.Atoi(string(respuesta))
+	if err != nil {
+		clientUtils.Logger.Error("Error al convertir tamaño de página", "error", err)
+		panic("Tamaño de página inválido")
+	}
+
+	globalsCpu.TamPagina = tamPagina
+	clientUtils.Logger.Info("Tamaño de página recibido desde Memoria", "tamPagina", tamPagina)
+}
+
 
 // Recibe un proceso del Kernel y lo loguea
 func RecibirProceso(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +133,14 @@ func EnviarHandshakeAKernel(indentificador string, puertoLibre int) {
 
 	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "cpus") //IP y Puerto de la CPU
 
+}
+
+func EnviarHandshakeAMemoria(identificador string, puertoLibre int) {
+	puertoCpu := strconv.Itoa(puertoLibre)
+
+	valores := []string{identificador, globalsCpu.CpuConfig.IpCpu, puertoCpu}
+
+	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpMemory, globalsCpu.CpuConfig.PortMemory, "cpus") //IP y Puerto de la CPU
 }
 
 // handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
@@ -210,16 +242,16 @@ func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
 	switch cod_op {
 	case NOOP, EXIT, DUMP_MEMORY:
 		if len(variables) != 0 {
-			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion %s incorrecto, no se deben ingresar parametros para esta instruccion", cod_op)
+			clientUtils.Logger.Error(fmt.Sprintf("cantidad de parametros recibidos en la instruccion %s incorrecto, no se deben ingresar parametros para esta instruccion", cod_op))
 		}
 	case GOTO:
 		cod_op = GOTO
 		if len(variables) != 1 {
-			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion GOTO incorrecto, se debe ingresar 1 parametro")
+			clientUtils.Logger.Error("cantidad de parametros recibidos en la instruccion GOTO incorrecto, se debe ingresar 1 parametro")
 		}
 	case READ, WRITE, IO, INIT_PROC:
 		if len(variables) != 2 {
-			clientUtils.Logger.Error("Cantidad de parametros recibidos en la instruccion %s incorrecto, se deben ingresar 2 parametros", cod_op)
+			clientUtils.Logger.Error(fmt.Sprintf("cantidad de parametros recibidos en la instruccion %s incorrecto, se deben ingresar 2 parametros", cod_op))
 		}
 	default:
 		clientUtils.Logger.Error("Instrucción inválida")
@@ -291,20 +323,33 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 // Escribir y Leer memoria 
 
 func readMemoria(pid int, direccion string, tamanio string) {
-	marco, err := TraducirDireccion(pid, direccion)
+	direccionLogica, err := strconv.Atoi(direccion)
+	if err != nil {
+		clientUtils.Logger.Error(fmt.Sprintf("READ - Dirección lógica inválida: %s", direccion))
+		return
+	}
+
+	// 1. Traducir a dirección física
+	direccionFisica, err := TraducirDireccion(pid, direccion)
 	if err != nil {
 		clientUtils.Logger.Error(fmt.Sprintf("READ - Error al traducir dirección: %s", err))
 		return
 	}
 
-	pagina, _ := strconv.Atoi(direccion)
-	cacheUtils.AccederACache(pid, pagina, false)
+	// 2. Calcular página lógica
+	pagina := direccionLogica / globalsCpu.TamPagina
 
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - LECTURA - Dirección lógica: %s → Marco físico: %d, Tamaño: %s", pid, direccion, marco, tamanio))
-	fmt.Printf("[PID %d] Lectura desde marco %d (lógica %s), tamaño %s\n", pid, marco, direccion, tamanio)
+	// 3. Consultar cache (no modifica)
+	contenido := cacheUtils.AccederACache(pid, pagina, false, "CONTENIDO_SIMULADO")
 
-	// Enviar a Memoria
-	valores := []string{strconv.Itoa(pid), strconv.Itoa(marco), tamanio}
+	// 4. Loggear lectura
+	clientUtils.Logger.Info(fmt.Sprintf(
+		"PID: %d - LECTURA - Dir. lógica: %d → Dir. física: %d (Página: %d), Tamaño: %s, Contenido cache: %s",
+		pid, direccionLogica, direccionFisica, pagina, tamanio, contenido,
+	))
+
+	// 5. Enviar a Memoria
+	valores := []string{strconv.Itoa(pid), strconv.Itoa(direccionFisica), tamanio}
 	paquete := clientUtils.Paquete{Valores: valores}
 
 	clientUtils.EnviarPaquete(
@@ -315,21 +360,35 @@ func readMemoria(pid int, direccion string, tamanio string) {
 	)
 }
 
+
 func writeMemoria(pid int, direccion string, dato string) {
-	marco, err := TraducirDireccion(pid, direccion)
+	direccionLogica, err := strconv.Atoi(direccion)
+	if err != nil {
+		clientUtils.Logger.Error(fmt.Sprintf("WRITE - Dirección lógica inválida: %s", direccion))
+		return
+	}
+
+	// 1. Traducir dirección lógica → física
+	direccionFisica, err := TraducirDireccion(pid, direccion)
 	if err != nil {
 		clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al traducir dirección: %s", err))
 		return
 	}
 
-	pagina, _ := strconv.Atoi(direccion)
-	cacheUtils.AccederACache(pid, pagina, true)
+	// 2. Calcular página lógica
+	pagina := direccionLogica / globalsCpu.TamPagina
 
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - ESCRITURA - Dirección lógica: %s → Marco físico: %d, Dato: %s", pid, direccion, marco, dato))
-	fmt.Printf("[PID %d] Escritura en marco %d (lógica %s), dato %s\n", pid, marco, direccion, dato)
+	// 3. Actualizar cache
+	cacheUtils.AccederACache(pid, pagina, true, dato)
 
-	// Enviar a Memoria
-	valores := []string{strconv.Itoa(pid), strconv.Itoa(marco), dato}
+	// 4. Log de escritura
+	clientUtils.Logger.Info(fmt.Sprintf(
+		"PID: %d - ESCRITURA - Dir. lógica: %d → Dir. física: %d (Página: %d), Dato: %s",
+		pid, direccionLogica, direccionFisica, pagina, dato,
+	))
+
+	// 5. Enviar a Memoria
+	valores := []string{strconv.Itoa(pid), strconv.Itoa(direccionFisica), dato}
 	paquete := clientUtils.Paquete{Valores: valores}
 
 	clientUtils.EnviarPaquete(
@@ -340,60 +399,25 @@ func writeMemoria(pid int, direccion string, dato string) {
 	)
 }
 
+
+
 //-----------------------------
 
 // Traduce una dirección lógica a física usando TLB (o consultando Memoria en caso de MISS)
-func TraducirDireccion(pid int, direccionLogica string) (marco int, err error) {
-	globalsCpu.TlbMutex.Lock()
-	defer globalsCpu.TlbMutex.Unlock()
-
-	pagina, err := strconv.Atoi(direccionLogica)
+func TraducirDireccion(pid int, direccion string) (int, error) {
+	dirLogica, err := strconv.Atoi(direccion)
 	if err != nil {
-		return -1, fmt.Errorf("Dirección lógica inválida: %s", direccionLogica)
+		return -1, fmt.Errorf("dirección lógica inválida")
 	}
 
-	// Buscar en la TLB
-	for i, entrada := range globalsCpu.Tlb {
-		if entrada.Pid == pid && entrada.Pagina == pagina {
-			clientUtils.Logger.Info("TLB HIT - PID %d Página %d -> Marco %d", pid, pagina, entrada.Marco)
-			globalsCpu.Tlb[i].UltimoUso = time.Now()
-			return entrada.Marco, nil
-		}
-	}
-
-	clientUtils.Logger.Info(fmt.Sprintf("TLB MISS - PID %d Página %d", pid, pagina))
-	marco = ConsultarMarcoMemoria(pid, pagina)
-
-	tlbUtils.AgregarATLB(pid, pagina, marco)
-	return marco, nil
-}
-
-func ConsultarMarcoMemoria(pid int, pagina int) int {
-	marco,err := ConsultarMemoria(pid, pagina)
+	// MMU completa: obtengo marco
+	marco, err := mmuUtils.ObtenerMarco(pid, dirLogica)
 	if err != nil {
-		clientUtils.Logger.Error(fmt.Sprintf("Error al consultar memoria: %s", err))
-		return -1 // Error al consultar memoria
-	}
-	clientUtils.Logger.Info(fmt.Sprintf("Consulta a Memoria - PID %d Página %d → Marco %d", pid, pagina, marco))
-	return marco
-}
-
-func ConsultarMemoria(pid int, pagina int) (int, error) {
-	valores := []string{strconv.Itoa(pid), strconv.Itoa(pagina)}
-	paquete := clientUtils.Paquete{Valores: valores}
-	marcoBytes := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpMemory, globalsCpu.CpuConfig.PortMemory, "consultarMarco", paquete)
-
-	if marcoBytes == nil {
-		return -1, fmt.Errorf("Error al convertir marco a int: %s", "No se recibió respuesta de Memoria")
+		return -1, err
 	}
 
-	marcoStr := string(marcoBytes)
-	marco, err := strconv.Atoi(marcoStr)
-	if err != nil {
-		return -1, fmt.Errorf("Error al convertir marco a int: %s", err)
-	}
-
-	return marco, nil
+	desplazamiento := dirLogica % globalsCpu.TamPagina
+	return marco*globalsCpu.TamPagina + desplazamiento, nil
 }
 
 func LimpiarProceso(pid int) {
