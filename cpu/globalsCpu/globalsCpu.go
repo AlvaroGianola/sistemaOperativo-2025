@@ -26,6 +26,12 @@ type Proceso struct {
 	Pc  int `json:"pc"`
 }
 
+type CaracteristicasMemoria struct {
+	TamanioPagina int
+	NivelesPaginacion int
+	CantidadEntradas int
+}
+
 type EntradaTLB struct {
 	Pid         int
 	Pagina      int
@@ -53,7 +59,7 @@ var (
 
 var CpuConfig *Config
 
-var TamPagina int
+var Memoria CaracteristicasMemoria
 
 var Identificador string
 
