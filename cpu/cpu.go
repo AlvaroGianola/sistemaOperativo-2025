@@ -20,7 +20,7 @@ func main() {
 
 	// Configurar CPU
 	globalscpu.CpuConfig = cpuUtils.IniciarConfiguracion("config.json")
-	cpuUtils.ObtenerTamPaginaDesdeMemoria()
+	cpuUtils.ObtenerInfoMemoria()
 	globalscpu.SetIdentificador(identificador)
 
 	// Configurar logger
