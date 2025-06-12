@@ -53,3 +53,19 @@ func BuscarEntradaMenosUsada() int {
 	}
 	return menosUsada
 }
+
+func ConsultarMarco (pagina int) (int) {
+	for _, entrada := range globalsCpu.Tlb {
+		if entrada.Pagina == pagina {
+			return entrada.Marco
+		}
+	}
+	return -1
+}
+
+func LimpiarTLB() {
+	globalsCpu.TlbMutex.Lock()
+	defer globalsCpu.TlbMutex.Unlock()
+	globalsCpu.Tlb = []globalsCpu.EntradaTLB{}
+	clientUtils.Logger.Info("TLB Cleared")
+}
