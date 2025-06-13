@@ -2,7 +2,6 @@ package mmu
 
 import (
 	"fmt"
-	"time"
 	"strconv"
 	"math"
 
@@ -67,12 +66,11 @@ func ObtenerMarco(pid int, pagina int) (int, error) {
 	globalsCpu.TlbMutex.Lock()
 	defer globalsCpu.TlbMutex.Unlock()
 
-	for i, entrada := range globalsCpu.Tlb {
-		if entrada.Pid == pid && entrada.Pagina == pagina {
-			globalsCpu.Tlb[i].UltimoUso = time.Now()
-			clientUtils.Logger.Info("TLB HIT", "PID", pid, "Página", pagina, "Marco", entrada.Marco)
-			return entrada.Marco, nil
-		}
+	marco:= tlbUtils.ConsultarMarco(pagina) // Actualiza el último uso
+
+	if marco != -1 {
+		clientUtils.Logger.Info("TLB HIT", "PID", pid, "Página", pagina, "Marco", marco)
+		return marco, nil
 	}
 
 	clientUtils.Logger.Info("TLB MISS", "PID", pid, "Página", pagina)
