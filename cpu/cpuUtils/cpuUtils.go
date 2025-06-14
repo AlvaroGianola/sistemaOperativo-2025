@@ -61,7 +61,7 @@ func ObtenerInfoMemoria() {
 	respuesta := clientUtils.EnviarPaqueteConRespuestaBody(
 		globalsCpu.CpuConfig.IpMemory,
 		globalsCpu.CpuConfig.PortMemory,
-		"obtenerTamPagina",
+		"obtenerConfiguracionMemoria",
 		clientUtils.Paquete{},
 	)
 
@@ -70,16 +70,9 @@ func ObtenerInfoMemoria() {
 		panic("Memoria no disponible")
 	}
 
-	var paqueteRespuesta clientUtils.Paquete
-	err := json.Unmarshal(respuesta, &paqueteRespuesta)
-	if err != nil {
-		clientUtils.Logger.Error("Error al deserializar respuesta de Memoria", "error", err)
-		panic("Respuesta inválida desde Memoria")
-	}
-
-	tamPagina, _ := strconv.Atoi(paqueteRespuesta.Valores[0])
-	niveles, _ := strconv.Atoi(paqueteRespuesta.Valores[1])
-	entradas, _ := strconv.Atoi(paqueteRespuesta.Valores[2])
+	tamPagina, _ := strconv.Atoi(string(respuesta[0]))
+	niveles, _ := strconv.Atoi(string(respuesta[1]))
+	entradas, _ := strconv.Atoi(string(respuesta[2]))
 
 	globalsCpu.Memoria.TamanioPagina = tamPagina
 	globalsCpu.Memoria.NivelesPaginacion = niveles
@@ -91,8 +84,6 @@ func ObtenerInfoMemoria() {
 		"Entradas por tabla", entradas,
 	)
 }
-
-
 
 // Recibe un proceso del Kernel y lo loguea
 func RecibirProceso(w http.ResponseWriter, r *http.Request) {
@@ -179,18 +170,18 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		ExecuteInstruccion(proceso, cod_op, variables)
 		//#CHECK
 		// le pregunto a kernel si hay una interrupción
-		hayInterrupcion,ok := PreguntarSiHayInterrupcion()
+		hayInterrupcion, ok := PreguntarSiHayInterrupcion()
 		if !ok {
 			clientUtils.Logger.Error("Error al preguntar si hay interrupción")
-		}else{
-			if(hayInterrupcion == "FALSE" ) {
+		} else {
+			if hayInterrupcion == "FALSE" {
 				clientUtils.Logger.Info("## No hay interrupción, continuando ejecución")
-			}else if (hayInterrupcion == "TRUE") {
+			} else if hayInterrupcion == "TRUE" {
 				clientUtils.Logger.Info("## Hay interrupción, deteniendo ejecución")
 				break
 			}
 		}
-		
+
 		// Si la instrucción es EXIT o INVALIDA, salimos del ciclo
 		if cod_op == EXIT {
 			LimpiarProceso(globalsCpu.ProcesoActual.Pid)
@@ -212,7 +203,7 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 func PreguntarSiHayInterrupcion() (string, bool) {
 	valores := []string{strconv.Itoa(globalsCpu.ProcesoActual.Pid), strconv.Itoa(globalsCpu.ProcesoActual.Pc)}
 	paquete := clientUtils.Paquete{Valores: valores}
-	interrupcion := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpKernel , globalsCpu.CpuConfig.PortKernel, "recibirInterrupcion", paquete)
+	interrupcion := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "recibirInterrupcion", paquete)
 
 	if interrupcion == nil {
 		clientUtils.Logger.Error("No se recibió respuesta de Kernel")
@@ -299,7 +290,7 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 		direccion := variables[0]
 		tamanio := variables[1]
 		direccionInt, err := strconv.Atoi(direccion)
-		tamanioInt, err := strconv.Atoi(tamanio)	
+		tamanioInt, err := strconv.Atoi(tamanio)
 
 		if err != nil {
 			clientUtils.Logger.Error("READ: argumento inválido, no es un número")
@@ -349,7 +340,7 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 	}
 }
 
-// Escribir y Leer memoria 
+// Escribir y Leer memoria
 
 func readMemoria(pid int, direccionLogica int, tamanio int) {
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
@@ -360,7 +351,7 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 		return
 	}
 
-	if (globalsCpu.CpuConfig.CacheEntries == 0){
+	if globalsCpu.CpuConfig.CacheEntries == 0 {
 		// Armar paquete y enviar
 		valores := []string{
 			strconv.Itoa(pid),
@@ -368,7 +359,7 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 			strconv.Itoa(tamanio),
 		}
 		paquete := clientUtils.Paquete{Valores: valores}
-	
+
 		respuesta := clientUtils.EnviarPaqueteConRespuestaBody(
 			globalsCpu.CpuConfig.IpMemory,
 			globalsCpu.CpuConfig.PortMemory,
@@ -378,9 +369,9 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 		contenido := string(respuesta)
 		clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d, Contenido: %s", pid, pagina, contenido))
 
-	}else {
+	} else {
 		// Consultar en cache
-		contenido,err := cacheUtils.LeerContenido(pid, pagina, tamanio)
+		contenido, err := cacheUtils.LeerContenido(pid, pagina, tamanio)
 		if err != nil {
 			clientUtils.Logger.Error(fmt.Sprintf("READ - Error al leer contenido: %s", err))
 			return
@@ -403,7 +394,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 	// Log
 	clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Dir. lógica: %d → Dir. física: %d, Dato: %s", pid, direccionLogica, marco, dato))
 
-	if (globalsCpu.CpuConfig.CacheEntries == 0){
+	if globalsCpu.CpuConfig.CacheEntries == 0 {
 		// Armar paquete y enviar
 		valores := []string{
 			strconv.Itoa(pid),
@@ -411,25 +402,24 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 			dato,
 		}
 		paquete := clientUtils.Paquete{Valores: valores}
-	
+
 		clientUtils.EnviarPaquete(
 			globalsCpu.CpuConfig.IpMemory,
 			globalsCpu.CpuConfig.PortMemory,
 			"writeMemoria",
 			paquete,
 		)
-	}else {
+	} else {
 		cacheUtils.AgregarACache(pid, pagina, dato, true)
 
 		clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d, Contenido %s → Cache actualizada", pid, pagina, dato))
 	}
 }
 
-
 //-----------------------------
 
 func LimpiarProceso(pid int) {
-    //Paso los datos de la cache que fueron modificados a memoria
+	//Paso los datos de la cache que fueron modificados a memoria
 	// Luego limpio el cache y luego la TLB
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		cacheUtils.FlushPaginasModificadas(pid)

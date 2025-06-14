@@ -6,27 +6,54 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+
+	globalsMemoria "github.com/sisoputnfrba/tp-golang/memoria/globalsMemoria"
 	memoriaUtils "github.com/sisoputnfrba/tp-golang/memoria/memoriaUtils"
+	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
 type Paquete struct {
 	Valores []string `json:"valores"`
 }
 
+type InfoMemoria struct {
+	TamPagina        int `json:"tam_pagina"`
+	Niveles          int `json:"niveles"`
+	EntradasPorTabla int `json:"entradas_por_tabla"`
+}
+
 func main() {
-	http.HandleFunc("/obtenerEntradaTabla", entradaTabla)
-	http.HandleFunc("/consultarMarco", consultarMarco)
-	http.HandleFunc("/readMemoria", readMemoria)
-	http.HandleFunc("/writeMemoria", writeMemoria)
-	http.HandleFunc("/readPagina", readPagina)
-	http.HandleFunc("/obtenerTamPagina", tamPagina)
-	http.HandleFunc("/siguienteInstruccion", memoriaUtils.SiguienteInstruccion)
-	http.HandleFunc("/iniciarProceso", memoriaUtils.IniciarProceso)
-	http.HandleFunc("/finalizarProceso", memoriaUtils.FinalizarProceso)
 
+	// Inicializa el logger que usará todo el módulo Memoria
+	clientUtils.ConfigurarLogger("memoria.log")
 
-	log.Println("🔧 Mock Memoria corriendo en :8002")
-	http.ListenAndServe(":8002", nil)
+	// Carga la configuración desde el archivo config.json
+	globalsMemoria.MemoriaConfig = memoriaUtils.IniciarConfiguracion("config.json")
+
+	// Crea el multiplexer HTTP y registra los endpoints que usará Memoria
+	mux := http.NewServeMux()
+
+	// Levanta el servidor en el puerto definido por configuración
+	direccion := fmt.Sprintf("%s:%d", globalsMemoria.MemoriaConfig.IpMemory, globalsMemoria.MemoriaConfig.PortMemory)
+	fmt.Printf("[Memoria] Servidor escuchando en puerto %d...\n", globalsMemoria.MemoriaConfig.PortMemory)
+
+	mux.HandleFunc("/obtenerEntradaTabla", entradaTabla)
+	mux.HandleFunc("/consultarMarco", consultarMarco)
+	mux.HandleFunc("/readMemoria", readMemoria)
+	mux.HandleFunc("/writeMemoria", writeMemoria)
+	mux.HandleFunc("/readPagina", readPagina)
+	mux.HandleFunc("/obtenerTamPagina", tamPagina)
+	mux.HandleFunc("/siguienteInstruccion", memoriaUtils.SiguienteInstruccion)
+	mux.HandleFunc("/iniciarProceso", memoriaUtils.IniciarProceso)
+	mux.HandleFunc("/finalizarProceso", memoriaUtils.FinalizarProceso)
+
+	err := http.ListenAndServe(direccion, mux)
+	if err != nil {
+		panic(err)
+	}
+
+	clientUtils.Logger.Info("🔧 Mock Memoria corriendo en : %s", direccion)
+
 }
 
 func entradaTabla(w http.ResponseWriter, r *http.Request) {
@@ -79,5 +106,9 @@ func readPagina(w http.ResponseWriter, r *http.Request) {
 
 func tamPagina(w http.ResponseWriter, r *http.Request) {
 	// Devuelve [tamaño_pagina, niveles, entradas]
-	w.Write([]byte(`[64, 2, 256]`)) // Simula un JSON array
+	tamanioDePagina := 64
+	niveles := 2
+	entradas := 256
+	tam := []byte{byte(tamanioDePagina), byte(niveles), byte(entradas)}
+	w.Write([]byte(tam)) // Simula un JSON array
 }
