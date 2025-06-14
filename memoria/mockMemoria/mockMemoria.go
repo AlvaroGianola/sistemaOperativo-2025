@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	memoriaUtils "github.com/sisoputnfrba/tp-golang/memoria/memoriaUtils"
 )
 
 type Paquete struct {
@@ -19,9 +20,13 @@ func main() {
 	http.HandleFunc("/writeMemoria", writeMemoria)
 	http.HandleFunc("/readPagina", readPagina)
 	http.HandleFunc("/obtenerTamPagina", tamPagina)
+	http.HandleFunc("/siguienteInstruccion", memoriaUtils.SiguienteInstruccion)
+	http.HandleFunc("/iniciarProceso", memoriaUtils.IniciarProceso)
+	http.HandleFunc("/finalizarProceso", memoriaUtils.FinalizarProceso)
 
-	log.Println("🔧 Mock Memoria corriendo en :8082")
-	http.ListenAndServe(":8082", nil)
+
+	log.Println("🔧 Mock Memoria corriendo en :8002")
+	http.ListenAndServe(":8002", nil)
 }
 
 func entradaTabla(w http.ResponseWriter, r *http.Request) {
