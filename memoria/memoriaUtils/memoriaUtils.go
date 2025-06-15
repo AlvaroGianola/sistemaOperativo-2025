@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	//"errors"
 	"net/http"
@@ -48,6 +49,7 @@ var (
 	tamanioPagina    = globalsMemoria.MemoriaConfig.PageSize
 	niveles          = globalsMemoria.MemoriaConfig.NumberOfLevels
 	entradasPorNivel = globalsMemoria.MemoriaConfig.EntriesPerPage
+	memDelay         = globalsMemoria.MemoriaConfig.MemoryDelay
 )
 
 func IniciarProceso(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +95,7 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errInterno := asignarMemoria(pid, instrucciones)
-	if errInterno != false {
+	if errInterno {
 		clientUtils.Logger.Error("Error al asignar memoria:", "error", errInterno)
 		http.Error(w, "Error al asignar memoria", http.StatusInternalServerError)
 		return
@@ -288,7 +290,8 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 
 	clientUtils.Logger.Info("Marco de usuario accedido", "pid", pid, "marco", direccionFisica)
 
-	w.Write([]byte(string(direccionFisica)))
+	time.Sleep(time.Duration(memDelay))
+	w.Write([]byte(strconv.Itoa(direccionFisica)))
 	w.WriteHeader(http.StatusOK)
 
 }
@@ -303,9 +306,16 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	marco := pedido.Valores[1]
-	if marco == "" {
-		clientUtils.Logger.Error("Movimiento no especificado")
+
+	if buscarProceso(pid) == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
+		http.Error(w, "PID no existe", http.StatusNotFound)
+		return
+	}
+
+	marco, err := strconv.Atoi(pedido.Valores[1])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear marco")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -321,11 +331,25 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Tamaño de página incorrecto", http.StatusBadRequest)
 		return
 	}
-
+	contenido := []byte{}
 	// ver de implementar semaforos para no leer cosas mientras otro la modifica
+	for i := 0; i < tamanioPagina; i++ {
+		if marco+i >= len(globalsMemoria.MemoriaUsuario) {
+			clientUtils.Logger.Error("Acceso fuera de rango a la memoria", "marco", marco, "offset", i)
+			http.Error(w, "Acceso fuera de rango a la memoria", http.StatusBadRequest)
+			return
+		}
+		if globalsMemoria.BitmapMarcosLibres[marco+i] {
+			clientUtils.Logger.Error("Marco no asignado a ningún proceso", "marco", marco+i)
+			http.Error(w, "Marco no asignado a ningún proceso", http.StatusBadRequest)
+			return
+		}
+		contenido = append(contenido, globalsMemoria.MemoriaUsuario[marco+i])
+	}
 
-	contenido := globalsMemoria.MemoriaUsuario[marco] // Simulamos la lectura de la página, en realidad deberíamos leer desde el marco
+	// Simulamos la lectura de la página, en realidad deberíamos leer desde el marco
 
+	clientUtils.Logger.Info("Página leída", "pid", pid, "marco", marco, "contenido", contenido)
 	w.Write([]byte(contenido))
 	w.WriteHeader(http.StatusOK)
 }
@@ -341,9 +365,14 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	marco := pedido.Valores[1]
-	if marco == "" {
-		clientUtils.Logger.Error("Movimiento no especificado")
+	if buscarProceso(pid) == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
+		http.Error(w, "PID no existe", http.StatusNotFound)
+		return
+	}
+	marco, err := strconv.Atoi(pedido.Valores[1])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear marco")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -360,9 +389,89 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contenido := pedido.Valores[3] // Simulamos la escritura de la página, en realidad deberíamos escribir en el marco
+	for i := 0; i < tamanioPagina; i++ {
+		if marco+i >= len(globalsMemoria.MemoriaUsuario) {
+			clientUtils.Logger.Error("Acceso fuera de rango a la memoria", "marco", marco, "offset", i)
+			http.Error(w, "Acceso fuera de rango a la memoria", http.StatusBadRequest)
+			return
+		}
+		contenido, err := strconv.Atoi(pedido.Valores[3+i])
+		if err != nil {
+			clientUtils.Logger.Error("Error al parsear contenido")
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
 
-	globalsMemoria.MemoriaUsuario[marco] = contenido // Simulamos la escritura en memoria
+		globalsMemoria.MemoriaUsuario[marco] = byte(contenido)
+	}
+
+	clientUtils.Logger.Info("Página escrita", "pid", pid, "marco", marco, "tamaño", tamanioEnviado)
+	w.WriteHeader(http.StatusOK)
+
+}
+
+func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
+	clientUtils.Logger.Info("[Memoria] Petición para leer dirección física recibida desde CPU")
+
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[0])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	if buscarProceso(pid) == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
+		http.Error(w, "PID no existe", http.StatusNotFound)
+		return
+	}
+
+	direccionFisica, err := strconv.Atoi(pedido.Valores[1])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear dirección física")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	contenido := globalsMemoria.MemoriaUsuario[direccionFisica]
+	// Simulamos la escritura de la dirección física
+
+	w.Write([]byte{contenido})
+	w.WriteHeader(http.StatusOK)
+}
+
+func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
+	clientUtils.Logger.Info("[Memoria] Petición para escribir dirección física recibida desde CPU")
+
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[0])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	if buscarProceso(pid) == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
+		http.Error(w, "PID no existe", http.StatusNotFound)
+		return
+	}
+
+	direccionFisica, err := strconv.Atoi(pedido.Valores[1])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear dirección física")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	contenido, err := strconv.Atoi(pedido.Valores[2])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear contenido")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	globalsMemoria.MemoriaUsuario[direccionFisica] = byte(contenido)
 
 	w.WriteHeader(http.StatusOK)
 
@@ -370,16 +479,27 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 
 func ObtenerConfiguracionMemoria(w http.ResponseWriter, r *http.Request) {
 	//esto es lo que pide cpu para saber tamaño de pagina, cantidad de niveles, etc que esta en mi config
+
+	//hacer un json que tenga los tres datos y enviarlo
+	clientUtils.Logger.Info("[Memoria] Petición para obtener configuración de memoria recibida desde CPU")
 	configuracion := struct {
-		tamanioPagina    int
-		niveles          int
-		entradasPorNivel int
+		TamanioPagina    int `json:"tamanioPagina"`
+		Niveles          int `json:"niveles"`
+		EntradasPorNivel int `json:"entradasPorNivel"`
 	}{
-		tamanioPagina:    globalsMemoria.MemoriaConfig.PageSize,
-		niveles:          globalsMemoria.MemoriaConfig.NumberOfLevels,
-		entradasPorNivel: globalsMemoria.MemoriaConfig.EntriesPerPage,
+		TamanioPagina:    tamanioPagina,
+		Niveles:          niveles,
+		EntradasPorNivel: entradasPorNivel,
 	}
-	w.Write([]byte{configuracion})
+	// Enviar la configuración como un JSON
+	configuracionJSON, err := json.Marshal(configuracion)
+	if err != nil {
+		clientUtils.Logger.Error("Error al codificar la configuración de memoria:", "error", err)
+		http.Error(w, "Error interno del servidor", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte(configuracionJSON))
 	w.WriteHeader(http.StatusOK)
 
 }
@@ -392,10 +512,14 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 }
 
 func DumpMemoria(w http.ResponseWriter, r *http.Request) {
-
+	//a implementar
 }
 
-/////////////----------FUNC AUXILIARES----------/////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////----------FUNC AUXILIARES----------////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func ParsearInstrucciones(archivo []byte) []string {
 	todasLasInstrucciones := string(archivo)
@@ -473,12 +597,16 @@ func asignarMemoria(pid int, instrucciones []byte) bool {
 			globalsMemoria.MemoriaUsuario[direccionFisica] = instrucciones[j]
 		}
 		// Insertar página en la jerarquía de tablas multinivel
-		insertarPaginaEnJerarquia(&proceso.TablaPaginasGlobal, &pagina, i, numLevels, entriesPerPage)
+		err := insertarPaginaEnJerarquia(&proceso.TablaPaginasGlobal, &pagina, i, numLevels, entriesPerPage)
+		if err {
+			clientUtils.Logger.Error("Error al insertar página en jerarquía")
+			return false
+		}
 	}
 	return true
 }
 
-func insertarPaginaEnJerarquia(tabla *globalsMemoria.TablaPaginas, pagina *globalsMemoria.Pagina, nroPagina int, niveles int, entradasPorNivel int) {
+func insertarPaginaEnJerarquia(tabla *globalsMemoria.TablaPaginas, pagina *globalsMemoria.Pagina, nroPagina int, niveles int, entradasPorNivel int) bool {
 	// Navegar o crear jerarquía desde Nivel 1 hasta Nivel N-1
 	actual := tabla
 	for nivel := 1; nivel < niveles; nivel++ {
@@ -492,6 +620,7 @@ func insertarPaginaEnJerarquia(tabla *globalsMemoria.TablaPaginas, pagina *globa
 			tablaExistente, esTabla := siguiente.(*globalsMemoria.TablaPaginas)
 			if !esTabla {
 				// error: la entrada no debería ser una página acá
+				return true
 			}
 			actual = tablaExistente
 		}
@@ -500,6 +629,7 @@ func insertarPaginaEnJerarquia(tabla *globalsMemoria.TablaPaginas, pagina *globa
 	// Nivel N: insertar página real
 	indiceFinal := calcularIndice(nroPagina, niveles)
 	actual.Entradas[indiceFinal] = pagina
+	return false // No hubo error
 }
 
 func calcularIndice(nroPagina, nivelActual int) int {
