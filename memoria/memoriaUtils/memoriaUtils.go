@@ -294,10 +294,77 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 }
 
 func LeerPagina(w http.ResponseWriter, r *http.Request) {
+	clientUtils.Logger.Info("[Memoria] Petición para leer una página recibida desde CPU")
 
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[0])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	marco := pedido.Valores[1]
+	if marco == "" {
+		clientUtils.Logger.Error("Movimiento no especificado")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	tamanioEnviado, err := strconv.Atoi(pedido.Valores[2])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear tamaño enviado")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	if tamanioEnviado != tamanioPagina {
+		clientUtils.Logger.Error("Tamaño de página no coincide con el configurado")
+		http.Error(w, "Tamaño de página incorrecto", http.StatusBadRequest)
+		return
+	}
+
+	// ver de implementar semaforos para no leer cosas mientras otro la modifica
+
+	contenido := globalsMemoria.MemoriaUsuario[marco] // Simulamos la lectura de la página, en realidad deberíamos leer desde el marco
+
+	w.Write([]byte(contenido))
+	w.WriteHeader(http.StatusOK)
 }
 
-func EscribirPagina(w http.ResponseWriter) {
+func EscribirPagina(w http.ResponseWriter, r *http.Request) {
+
+	clientUtils.Logger.Info("[Memoria] Petición para escribir una página recibida desde CPU")
+
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[0])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	marco := pedido.Valores[1]
+	if marco == "" {
+		clientUtils.Logger.Error("Movimiento no especificado")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	tamanioEnviado, err := strconv.Atoi(pedido.Valores[2])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear tamaño enviado")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	if tamanioEnviado != tamanioPagina {
+		clientUtils.Logger.Error("Tamaño de página no coincide con el configurado")
+		http.Error(w, "Tamaño de página incorrecto", http.StatusBadRequest)
+		return
+	}
+
+	contenido := pedido.Valores[3] // Simulamos la escritura de la página, en realidad deberíamos escribir en el marco
+
+	globalsMemoria.MemoriaUsuario[marco] = contenido // Simulamos la escritura en memoria
+
+	w.WriteHeader(http.StatusOK)
 
 }
 
@@ -312,7 +379,7 @@ func ObtenerConfiguracionMemoria(w http.ResponseWriter, r *http.Request) {
 		niveles:          globalsMemoria.MemoriaConfig.NumberOfLevels,
 		entradasPorNivel: globalsMemoria.MemoriaConfig.EntriesPerPage,
 	}
-	w.Write([]byte{configuracion.tamanioPagina, configuracion.niveles, configuracion.entradasPorNivel})
+	w.Write([]byte{configuracion})
 	w.WriteHeader(http.StatusOK)
 
 }
