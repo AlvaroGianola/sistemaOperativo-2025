@@ -54,13 +54,13 @@ func BuscarEntradaMenosUsada() int {
 	return menosUsada
 }
 
-func ConsultarMarco (pagina int) (int) {
+func ConsultarMarco (pagina int) (int,bool) {
 	for _, entrada := range globalsCpu.Tlb {
 		if entrada.Pagina == pagina {
-			return entrada.Marco
+			return entrada.Marco,true
 		}
 	}
-	return -1
+	return -1,false
 }
 
 func LimpiarTLB() {
