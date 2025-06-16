@@ -5,24 +5,60 @@ import (
 	"strconv"
 
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
-	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
-	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
 	mmuUtils "github.com/sisoputnfrba/tp-golang/cpu/mmu"
+	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
+	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
-func LeerContenido(pid int, pagina int,tamanio int) (string, error) {
+func BuscarEnCache(pid int, pagina int) (string, bool) {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
+
+	direccionLogica := mmuUtils.ObtenerDireccionLogica(pagina)
 
 	// Buscar en la caché
 	for _, entrada := range globalsCpu.Cache {
 		if entrada.Pid == pid && entrada.Pagina == pagina {
 			clientUtils.Logger.Info(fmt.Sprintf("Cache HIT - PID %d Página %d", pid, pagina))
-			return entrada.Contenido[:tamanio], nil
+			return entrada.Contenido[mmuUtils.ObtenerDesplazamiento(direccionLogica)], true
 		}
 	}
 
 	clientUtils.Logger.Info(fmt.Sprintf("Cache MISS - PID %d Página %d", pid, pagina))
+	return "", false
+}
+
+func ModificarContenidoCache(pid int, pagina int, contenido string) error {
+	globalsCpu.CacheMutex.Lock()
+	defer globalsCpu.CacheMutex.Unlock()
+
+	for i, entrada := range globalsCpu.Cache {
+		if entrada.Pid == pid && entrada.Pagina == pagina {
+			globalsCpu.Cache[i].Contenido[mmuUtils.ObtenerDesplazamiento(mmuUtils.ObtenerDireccionLogica(pagina))] = contenido
+			globalsCpu.Cache[i].Modificado = true
+			clientUtils.Logger.Info(fmt.Sprintf("Cache Modify - PID %d Página %d", pid, pagina))
+			return nil
+		}
+	}
+
+	clientUtils.Logger.Error(fmt.Sprintf("No se encontró la entrada en caché para PID %d Página %d", pid, pagina))
+	return fmt.Errorf("no se encontró la entrada en caché")
+}
+
+func LeerContenido(pid int, pagina int,tamanio int) (string, error) {
+	globalsCpu.CacheMutex.Lock()
+	defer globalsCpu.CacheMutex.Unlock()
+
+	if globalsCpu.CpuConfig.CacheEntries > 0 {
+		contenido,encontroContenido := BuscarEnCache(pid, pagina)
+
+		if encontroContenido {
+			clientUtils.Logger.Info(fmt.Sprintf("Cache HIT - PID %d Página %d", pid, pagina))
+			return contenido[:tamanio], nil
+		}
+
+		clientUtils.Logger.Info(fmt.Sprintf("Cache MISS - PID %d Página %d", pid, pagina))
+	}
 
 	marco, err := mmuUtils.ObtenerMarco(pid, pagina)
 	if err != nil {
@@ -49,18 +85,18 @@ func LeerContenido(pid int, pagina int,tamanio int) (string, error) {
 	}
 	contenido := string(respuesta)
 	clientUtils.Logger.Info(fmt.Sprintf("Cache MISS - PID %d Página %d → Agregando a caché", pid, pagina))
-	AgregarACache(pid, pagina, contenido, false)
+	AgregarACache(pid, pagina, contenido)
 	return contenido[:tamanio], nil
 
 }
 
-func AgregarACache(pid int, pagina int, contenido string, modificar bool) {
+func AgregarACache(pid int, pagina int, dato string) {
 	entrada := globalsCpu.EntradaCache{
 		Pid:       pid,
 		Pagina:    pagina,
-		Contenido: contenido,
+		Contenido: []string{dato},
 		Uso:       true,
-		Modificado: modificar,
+		Modificado: false,
 	}
 
 	if len(globalsCpu.Cache) < globalsCpu.CpuConfig.CacheEntries {
@@ -95,18 +131,17 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 	if evictada.Modificado {
 		clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - Página %d modificada → escribir en Memoria", evictada.Pagina))
 
-		// Simulá envío a Memoria si querés (opcional)
 		valores := []string{
 			strconv.Itoa(evictada.Pid),
 			strconv.Itoa(evictada.Pagina),
-			evictada.Contenido,
+			evictada.Contenido[mmuUtils.ObtenerDesplazamiento(mmuUtils.ObtenerDireccionLogica(evictada.Pagina))],
 		}
 		paquete := clientUtils.Paquete{Valores: valores}
 
 		clientUtils.EnviarPaquete(
 			globalsCpu.CpuConfig.IpMemory,
 			globalsCpu.CpuConfig.PortMemory,
-			"writePaginaModificada",
+			"writePagina",
 			paquete,
 		)
 	}
@@ -123,8 +158,8 @@ func FlushPaginasModificadas(pid int){
 	//1-Recorro las caches modificadas y con la tlb consigo su marco
 	for _, entrada := range globalsCpu.Cache {
 		if entrada.Pid == pid && entrada.Modificado {
-			marco := tlbUtils.ConsultarMarco(entrada.Pagina)
-			if marco == -1 {
+			marco,encontroMarco := tlbUtils.ConsultarMarco(entrada.Pagina)
+			if !encontroMarco {
 				clientUtils.Logger.Error(fmt.Sprintf("No se encontró el marco para la página %d del PID %d", entrada.Pagina, pid))
 				continue
 			}
@@ -132,13 +167,13 @@ func FlushPaginasModificadas(pid int){
 			valores := []string{
 				strconv.Itoa(pid),
 				strconv.Itoa(marco),
-				entrada.Contenido,
+				entrada.Contenido[mmuUtils.ObtenerDesplazamiento(mmuUtils.ObtenerDireccionLogica(entrada.Pagina))],
 			}
 			paquete := clientUtils.Paquete{Valores: valores}
 			clientUtils.EnviarPaquete(
 				globalsCpu.CpuConfig.IpMemory,
 				globalsCpu.CpuConfig.PortMemory,
-				"writePaginaModificada",
+				"writePagina",
 				paquete,
 			)
 
