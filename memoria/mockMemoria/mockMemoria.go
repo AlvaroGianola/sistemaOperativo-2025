@@ -38,7 +38,7 @@ func main() {
 	fmt.Printf("[Memoria] Servidor escuchando en puerto %d...\n", globalsMemoria.MemoriaConfig.PortMemory)
 
 	mux.HandleFunc("/obtenerEntradaTabla", entradaTabla)
-	mux.HandleFunc("/consultarMarco", consultarMarco)
+	mux.HandleFunc("/accederMarcoUsuario", accederMarcoUsuario)
 	mux.HandleFunc("/readMemoria", readMemoria)
 	mux.HandleFunc("/writeMemoria", writeMemoria)
 	mux.HandleFunc("/readPagina", readPagina)
@@ -67,11 +67,12 @@ func entradaTabla(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(fmt.Sprintf("%d", id)))
 }
 
-func consultarMarco(w http.ResponseWriter, r *http.Request) {
+func accederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	var p Paquete
 	_ = json.NewDecoder(r.Body).Decode(&p)
 
-	pagina, _ := strconv.Atoi(p.Valores[1])
+	fmt.Printf("📦 accederMarcoUsuario - Recibido: %+v\n", p.Valores)
+	pagina, _ := strconv.Atoi(p.Valores[0])
 	w.Write([]byte(fmt.Sprintf("%d", 1000+pagina))) // Marco ficticio
 }
 

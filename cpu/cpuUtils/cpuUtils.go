@@ -349,39 +349,39 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 func readMemoria(pid int, direccionLogica int, tamanio int) {
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 
-	if( globalsCpu.CpuConfig.CacheEntries > 0) {
+	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		contenido, encontroContenido := cacheUtils.BuscarEnCache(pid, pagina)
 		if encontroContenido {
 			clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d, Contenido: %s → Cache HIT", pid, pagina, contenido[:tamanio]))
 			fmt.Println(contenido[:tamanio])
 			return
-		}else{
+		} else {
 			clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Cache MISS", pid, pagina))
 		}
 	}
-		marco, err := mmuUtils.ObtenerMarco(pid, direccionLogica)
-		if err != nil {
-			clientUtils.Logger.Error(fmt.Sprintf("READ - Error al obtener marco: %s", err))
-			return
-		}
+	marco, err := mmuUtils.ObtenerMarco(pid, direccionLogica)
+	if err != nil {
+		clientUtils.Logger.Error(fmt.Sprintf("READ - Error al obtener marco: %s", err))
+		return
+	}
 
-		// Log
-		clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Dir. lógica: %d → Dir. física: %d", pid, direccionLogica, marco))
+	// Log
+	clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Dir. lógica: %d → Dir. física: %d", pid, direccionLogica, marco))
 
-		contenido,err := consultaRead(pid, marco, direccionLogica)
+	contenido, err := consultaRead(pid, marco, direccionLogica)
 
-		if err != nil {
-			clientUtils.Logger.Error(fmt.Sprintf("READ - Error al consultar memoria: %s", err))
-			return
-		}
+	if err != nil {
+		clientUtils.Logger.Error(fmt.Sprintf("READ - Error al consultar memoria: %s", err))
+		return
+	}
 
-		if globalsCpu.CpuConfig.CacheEntries > 0 {
-			cacheUtils.AgregarACache(pid, pagina, contenido)
-			clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Agregando a caché", pid, pagina))
-		}
+	if globalsCpu.CpuConfig.CacheEntries > 0 {
+		cacheUtils.AgregarACache(pid, pagina, contenido)
+		clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Agregando a caché", pid, pagina))
+	}
 
-		clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d, Contenido: %s", pid, pagina, contenido[:tamanio]))
-		fmt.Println(contenido[:tamanio])
+	clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d, Contenido: %s", pid, pagina, contenido[:tamanio]))
+	fmt.Println(contenido[:tamanio])
 
 }
 
@@ -390,7 +390,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
-		dato,encontroDato := cacheUtils.BuscarEnCache(pid, pagina)
+		dato, encontroDato := cacheUtils.BuscarEnCache(pid, pagina)
 		if encontroDato {
 			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d, Contenido %s → Cache HIT", pid, pagina, dato))
 			err := cacheUtils.ModificarContenidoCache(pid, pagina, dato)
@@ -398,7 +398,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 				clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al modificar contenido en cache: %s", err))
 				return
 			}
-		} else{
+		} else {
 			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d → Cache MISS", pid, pagina))
 		}
 	}
@@ -407,10 +407,10 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al obtener marco: %s", err))
 		return
 	}
-	
+
 	consultaWrite(pid, marco, dato)
 
-	if( globalsCpu.CpuConfig.CacheEntries > 0) {
+	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		// Agregar a la caché
 		cacheUtils.AgregarACache(pid, pagina, dato)
 		clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d → Agregando a caché", pid, pagina))
@@ -421,7 +421,6 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 
 }
 
-//
 func consultaWrite(pid int, marco int, dato string) {
 	// Armar paquete y enviar
 	valores := []string{
@@ -431,16 +430,16 @@ func consultaWrite(pid int, marco int, dato string) {
 	}
 	paquete := clientUtils.Paquete{Valores: valores}
 
-	clientUtils.EnviarPaquete(
+	clientUtils.GenerarYEnviarPaquete(
+		paquete.Valores,
 		globalsCpu.CpuConfig.IpMemory,
 		globalsCpu.CpuConfig.PortMemory,
 		"writeMemoria",
-		paquete,
 	)
 }
 
-func consultaRead(pid int,marco int, direccionLogica int)(string,error){
-// Armar paquete y enviar
+func consultaRead(pid int, marco int, direccionLogica int) (string, error) {
+	// Armar paquete y enviar
 	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 
@@ -457,7 +456,7 @@ func consultaRead(pid int,marco int, direccionLogica int)(string,error){
 		"readPagina",
 		paquete,
 	)
-	
+
 	if respuesta == nil {
 		clientUtils.Logger.Error(fmt.Sprintf("No se recibió respuesta de memoria para PID %d Página %d", pid, pagina))
 		return "", fmt.Errorf("no se recibió respuesta de memoria")
@@ -465,7 +464,7 @@ func consultaRead(pid int,marco int, direccionLogica int)(string,error){
 
 	contenido := string(respuesta)
 
-	return contenido,nil
+	return contenido, nil
 }
 
 //-----------------------------

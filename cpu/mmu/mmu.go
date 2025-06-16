@@ -36,26 +36,32 @@ func ObtenerMarcoMultinivel(pid int, direccionLogica int, niveles int, entradasP
 
 	for nivel := 1; nivel <= niveles; nivel++ {
 		entrada := CalcularEntradaNivel(nroPagina, nivel, entradasPorTabla, niveles)
-		valores = append(valores,strconv.Itoa(entrada))
+		valores = append(valores, strconv.Itoa(entrada))
 	}
-	
+
 	paquete := clientUtils.Paquete{Valores: valores}
 
-	respuesta := string(clientUtils.EnviarPaqueteConRespuestaBody(
+	resBytes := clientUtils.EnviarPaqueteConRespuestaBody(
 		globalsCpu.CpuConfig.IpMemory,
 		globalsCpu.CpuConfig.PortMemory,
 		"accederMarcoUsuario",
 		paquete,
-	))
+	)
 
-	marco,err := strconv.Atoi(respuesta)
-
-	if err != nil {
-		clientUtils.Logger.Error("Error al obtener marco de memoria", "error", err)
-		return -1, fmt.Errorf("error al obtener marco de memoria: %w", err)
+	if resBytes == nil {
+		clientUtils.Logger.Error("Error: no se recibió respuesta de Memoria (accederMarcoUsuario)")
+		return -1, fmt.Errorf("no se recibió respuesta de Memoria")
 	}
 
-	return marco,err
+	respuesta := string(resBytes)
+	marco, err := strconv.Atoi(respuesta)
+
+	if err != nil {
+		clientUtils.Logger.Error("Error al convertir marco de memoria", "respuesta", respuesta, "error", err)
+		return -1, fmt.Errorf("error al convertir marco: %w", err)
+	}
+
+	return marco, nil
 
 }
 
@@ -64,7 +70,7 @@ func ObtenerMarco(pid int, pagina int) (int, error) {
 	globalsCpu.TlbMutex.Lock()
 	defer globalsCpu.TlbMutex.Unlock()
 
-	marco,encuentraMarco:= tlbUtils.ConsultarMarco(pagina) // Actualiza el último uso
+	marco, encuentraMarco := tlbUtils.ConsultarMarco(pagina) // Actualiza el último uso
 
 	if encuentraMarco {
 		clientUtils.Logger.Info("TLB HIT", "PID", pid, "Página", pagina, "Marco", marco)
