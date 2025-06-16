@@ -2,13 +2,17 @@ package mmu
 
 import (
 	"fmt"
-	"strconv"
 	"math"
+	"strconv"
 
-globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
-clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
-tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
+	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
+	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
+	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
+
+func ObtenerDireccionLogica(nroPagina int) int {
+	return nroPagina * globalsCpu.Memoria.TamanioPagina
+}
 
 func ObtenerNumeroDePagina(direccionLogica int) int {
 	return int(math.Floor(float64(direccionLogica) / float64(globalsCpu.Memoria.TamanioPagina)))
@@ -26,39 +30,33 @@ func CalcularEntradaNivel(nroPagina, nivel, cantEntradas, niveles int) int {
 
 func ObtenerMarcoMultinivel(pid int, direccionLogica int, niveles int, entradasPorTabla int) (int, error) {
 	nroPagina := ObtenerNumeroDePagina(direccionLogica)
-	idTablaActual := 0 // raíz
+	valores := []string{
+		strconv.Itoa(pid),
+	}
 
 	for nivel := 1; nivel <= niveles; nivel++ {
 		entrada := CalcularEntradaNivel(nroPagina, nivel, entradasPorTabla, niveles)
+		valores = append(valores,strconv.Itoa(entrada))
+	}
+	
+	paquete := clientUtils.Paquete{Valores: valores}
 
-		valores := []string{
-			strconv.Itoa(pid),
-			strconv.Itoa(idTablaActual),
-			strconv.Itoa(nivel),
-			strconv.Itoa(entrada),
-		}
-		paquete := clientUtils.Paquete{Valores: valores}
+	respuesta := string(clientUtils.EnviarPaqueteConRespuestaBody(
+		globalsCpu.CpuConfig.IpMemory,
+		globalsCpu.CpuConfig.PortMemory,
+		"accederMarcoUsuario",
+		paquete,
+	))
 
-		respuesta := clientUtils.EnviarPaqueteConRespuestaBody(
-			globalsCpu.CpuConfig.IpMemory,
-			globalsCpu.CpuConfig.PortMemory,
-			"obtenerEntradaTabla",
-			paquete,
-		)
+	marco,err := strconv.Atoi(respuesta)
 
-		if respuesta == nil {
-			return -1, fmt.Errorf("no se recibió respuesta en nivel %d", nivel)
-		}
-
-		id, err := strconv.Atoi(string(respuesta))
-		if err != nil {
-			return -1, fmt.Errorf("respuesta inválida en nivel %d", nivel)
-		}
-
-		idTablaActual = id
+	if err != nil {
+		clientUtils.Logger.Error("Error al obtener marco de memoria", "error", err)
+		return -1, fmt.Errorf("error al obtener marco de memoria: %w", err)
 	}
 
-	return idTablaActual, nil // marco en último nivel
+	return marco,err
+
 }
 
 // MMU: Traduce dirección lógica a marco físico, usando TLB + Memoria
@@ -66,9 +64,9 @@ func ObtenerMarco(pid int, pagina int) (int, error) {
 	globalsCpu.TlbMutex.Lock()
 	defer globalsCpu.TlbMutex.Unlock()
 
-	marco:= tlbUtils.ConsultarMarco(pagina) // Actualiza el último uso
+	marco,encuentraMarco:= tlbUtils.ConsultarMarco(pagina) // Actualiza el último uso
 
-	if marco != -1 {
+	if encuentraMarco {
 		clientUtils.Logger.Info("TLB HIT", "PID", pid, "Página", pagina, "Marco", marco)
 		return marco, nil
 	}
