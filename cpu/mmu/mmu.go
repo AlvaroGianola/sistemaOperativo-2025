@@ -25,7 +25,8 @@ func ObtenerDesplazamiento(direccionLogica int) int {
 func CalcularEntradaNivel(nroPagina, nivel, cantEntradas, niveles int) int {
 	exponente := niveles - nivel
 	divisor := int(math.Pow(float64(cantEntradas), float64(exponente)))
-	return (nroPagina / divisor) % cantEntradas
+	println(divisor)
+	return int(math.Floor(float64(nroPagina)/float64(divisor))) % cantEntradas
 }
 
 func ObtenerMarcoMultinivel(pid int, direccionLogica int, niveles int, entradasPorTabla int) (int, error) {

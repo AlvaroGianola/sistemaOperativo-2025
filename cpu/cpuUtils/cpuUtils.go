@@ -61,7 +61,7 @@ func ObtenerInfoMemoria() {
 	respuesta := clientUtils.EnviarPaqueteConRespuestaBody(
 		globalsCpu.CpuConfig.IpMemory,
 		globalsCpu.CpuConfig.PortMemory,
-		"obtenerConfiguracionMemoria",
+		"obtenerTamPagina",
 		clientUtils.Paquete{},
 	)
 
@@ -348,7 +348,6 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 
 func readMemoria(pid int, direccionLogica int, tamanio int) {
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
-
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		contenido, encontroContenido := cacheUtils.BuscarEnCache(pid, pagina)
 		if encontroContenido {
@@ -378,6 +377,12 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		cacheUtils.AgregarACache(pid, pagina, contenido)
 		clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Agregando a caché", pid, pagina))
+	}
+
+	if tamanio > len(contenido) {
+		clientUtils.Logger.Error("Error, el tamaño a leer en la direccion es mayor a su contenido, se devolvera el contenido completo")
+		fmt.Println(contenido)
+		return
 	}
 
 	clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d, Contenido: %s", pid, pagina, contenido[:tamanio]))

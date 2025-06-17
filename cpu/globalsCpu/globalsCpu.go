@@ -27,24 +27,24 @@ type Proceso struct {
 }
 
 type CaracteristicasMemoria struct {
-	TamanioPagina int
+	TamanioPagina     int
 	NivelesPaginacion int
-	CantidadEntradas int
+	CantidadEntradas  int
 }
 
 type EntradaTLB struct {
-	Pid         int
-	Pagina      int
-	Marco       int
-	UltimoUso   time.Time
+	Pid             int
+	Pagina          int
+	Marco           int
+	UltimoUso       time.Time
 	InstanteCargado time.Time
 }
 
 type EntradaCache struct {
-	Pid       int
-	Pagina    int
-	Contenido []string
-	Uso       bool
+	Pid        int
+	Pagina     int
+	Contenido  string
+	Uso        bool
 	Modificado bool
 }
 
@@ -52,8 +52,8 @@ var (
 	Tlb      []EntradaTLB
 	TlbMutex sync.Mutex
 
-	Cache     []EntradaCache
-	CacheMutex sync.Mutex
+	Cache        []EntradaCache
+	CacheMutex   sync.Mutex
 	PunteroClock int
 )
 

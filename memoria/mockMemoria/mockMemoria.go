@@ -72,7 +72,8 @@ func accederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&p)
 
 	fmt.Printf("📦 accederMarcoUsuario - Recibido: %+v\n", p.Valores)
-	pagina, _ := strconv.Atoi(p.Valores[0])
+	pagina, _ := strconv.Atoi(p.Valores[len(p.Valores)-1])
+	fmt.Println(p.Valores)
 	w.Write([]byte(fmt.Sprintf("%d", 1000+pagina))) // Marco ficticio
 }
 

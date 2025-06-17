@@ -3,7 +3,7 @@
     "ip_memory": "127.0.0.1",
     "memory_size": 4096,
     "page_size": 64,
-    "entries_per_page": 4,
+    "entries_per_page": 1,
     "number_of_levels": 5,
     "memory_delay": 1500,
     "swapfile_path": "/home/utnso/swapfile.bin",
