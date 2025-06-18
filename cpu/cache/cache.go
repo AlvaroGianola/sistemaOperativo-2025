@@ -10,7 +10,7 @@ import (
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
-func BuscarEnCache(pid int, pagina int) ([]byte, bool) {
+func BuscarPaginaEnCache(pid int, pagina int) ([]byte, bool) {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
 
@@ -45,7 +45,7 @@ func ModificarContenidoCache(pid int, pagina int, contenido string) error {
 	return fmt.Errorf("no se encontró la entrada en caché")
 }
 
-func AgregarACache(pid int, pagina int, dato string) {
+func AgregarACache(pid int, pagina int, dato []byte) {
 	//CACHE DELAY
 	time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
 
