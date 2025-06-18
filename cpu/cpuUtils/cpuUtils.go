@@ -398,7 +398,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		dato, encontroDato := cacheUtils.BuscarEnCache(pid, pagina)
 		if encontroDato {
 			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d, Contenido %s → Cache HIT", pid, pagina, dato))
-			err := cacheUtils.ModificarContenidoCache(pid, pagina, dato)
+			err := cacheUtils.ModificarContenidoCache(pid, pagina, string(dato))
 			if err != nil {
 				clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al modificar contenido en cache: %s", err))
 				return

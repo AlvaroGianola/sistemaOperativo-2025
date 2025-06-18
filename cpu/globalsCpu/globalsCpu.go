@@ -43,7 +43,7 @@ type EntradaTLB struct {
 type EntradaCache struct {
 	Pid        int
 	Pagina     int
-	Contenido  string
+	Contenido  []byte
 	Uso        bool
 	Modificado bool
 }

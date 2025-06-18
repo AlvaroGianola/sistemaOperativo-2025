@@ -10,7 +10,7 @@ import (
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
-func BuscarEnCache(pid int, pagina int) (string, bool) {
+func BuscarEnCache(pid int, pagina int) ([]byte, bool) {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
 
@@ -25,7 +25,7 @@ func BuscarEnCache(pid int, pagina int) (string, bool) {
 	}
 
 	clientUtils.Logger.Info(fmt.Sprintf("Cache MISS - PID %d Página %d", pid, pagina))
-	return "", false
+	return nil, false
 }
 
 func ModificarContenidoCache(pid int, pagina int, contenido string) error {
@@ -34,7 +34,7 @@ func ModificarContenidoCache(pid int, pagina int, contenido string) error {
 
 	for i, entrada := range globalsCpu.Cache {
 		if entrada.Pid == pid && entrada.Pagina == pagina {
-			globalsCpu.Cache[i].Contenido = contenido
+			globalsCpu.Cache[i].Contenido = []byte(contenido)
 			globalsCpu.Cache[i].Modificado = true
 			clientUtils.Logger.Info(fmt.Sprintf("Cache Modify - PID %d Página %d", pid, pagina))
 			return nil
@@ -49,15 +49,24 @@ func AgregarACache(pid int, pagina int, dato string) {
 	//CACHE DELAY
 	time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
 
+	cont := make([]byte, globalsCpu.Memoria.TamanioPagina)
+
+	for i := 0; i < globalsCpu.Memoria.TamanioPagina; i++ {
+		if i >= len(dato) {
+			cont[i] = 0
+		} else {
+			cont[i] = dato[i]
+		}
+	}
+
+
 	entrada := globalsCpu.EntradaCache{
 		Pid:        pid,
 		Pagina:     pagina,
-		Contenido:  dato,
+		Contenido:  cont,
 		Uso:        true,
 		Modificado: false,
 	}
-
-	entrada.Contenido = dato
 
 	if len(globalsCpu.Cache) < globalsCpu.CpuConfig.CacheEntries {
 		globalsCpu.Cache = append(globalsCpu.Cache, entrada)
@@ -94,7 +103,7 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 		valores := []string{
 			strconv.Itoa(evictada.Pid),
 			strconv.Itoa(evictada.Pagina),
-			evictada.Contenido,
+			string(evictada.Contenido),
 		}
 		paquete := clientUtils.Paquete{Valores: valores}
 
@@ -127,7 +136,7 @@ func FlushPaginasModificadas(pid int) {
 			valores := []string{
 				strconv.Itoa(pid),
 				strconv.Itoa(marco),
-				entrada.Contenido,
+				string(entrada.Contenido),
 			}
 			paquete := clientUtils.Paquete{Valores: valores}
 			clientUtils.EnviarPaquete(
