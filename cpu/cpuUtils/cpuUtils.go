@@ -345,14 +345,18 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 }
 
 // Escribir y Leer memoria
-
+// 1-Bucar el nro de pagina
+// 2-Buscar en la cache si existe
+// 3-Si no existe, buscar en la tlb
+// 4-Si no existe en la tlb, buscar en memoria
+// 5-Escribir o leer el contenido
 func readMemoria(pid int, direccionLogica int, tamanio int) {
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		contenido, encontroContenido := cacheUtils.BuscarPaginaEnCache(pid, pagina)
 		if encontroContenido {
 			clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d, Contenido: %s → Cache HIT", pid, pagina, contenido[:tamanio]))
-			fmt.Println(contenido[:tamanio])
+			fmt.Println(string(contenido[:tamanio]))
 			return
 		} else {
 			clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Cache MISS", pid, pagina))
@@ -367,7 +371,7 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 	// Log
 	clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Dir. lógica: %d → Dir. física: %d", pid, direccionLogica, marco))
 
-	contenido, err := consultaRead(pid, marco, direccionLogica)
+	contenido, err := consultaRead(pid, marco, direccionLogica,tamanio)
 
 	if err != nil {
 		clientUtils.Logger.Error(fmt.Sprintf("READ - Error al consultar memoria: %s", err))
@@ -375,7 +379,7 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 	}
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
-		cacheUtils.AgregarACache(pid, pagina, contenido)
+		cacheUtils.AgregarACache(pid, direccionLogica, contenido)
 		clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Agregando a caché", pid, pagina))
 	}
 
@@ -413,11 +417,11 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		return
 	}
 
-	consultaWrite(pid, marco, []byte(dato))
+	consultaWrite(pid, marco, []byte(dato),direccionLogica)
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		// Agregar a la caché
-		cacheUtils.AgregarACache(pid, pagina,[]byte(dato))
+		cacheUtils.AgregarACache(pid, direccionLogica,[]byte(dato))
 		clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d → Agregando a caché", pid, pagina))
 	}
 
@@ -426,11 +430,16 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 
 }
 
-func consultaWrite(pid int, marco int, dato []byte) {
+func consultaWrite(pid int, marco int, dato []byte,direccionLogica int) {
 	// Armar paquete y enviar
- 
-	for i:= 0; i < globalsCpu.Memoria.TamanioPagina; i++ {
-		desplazamiento := mmuUtils.ObtenerDesplazamiento(i)
+
+	if len(dato) + direccionLogica > globalsCpu.Memoria.TamanioPagina {
+		clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error: el dato %s excede el tamaño de la página", string(dato)))
+		return
+	}
+	
+	for i:= 0; i < len(dato); i++ {
+		desplazamiento := mmuUtils.ObtenerDesplazamiento(i + direccionLogica)
 
 		valores := []string{
 			strconv.Itoa(pid),
@@ -450,13 +459,18 @@ func consultaWrite(pid int, marco int, dato []byte) {
 
 }
 
-func consultaRead(pid int, marco int, direccionLogica int) ([]byte, error) {
+func consultaRead(pid int, marco int, direccionLogica int,tamanio int) ([]byte, error) {
 	// Armar paquete y enviar
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 	contenido := make([]byte, globalsCpu.Memoria.TamanioPagina)
 
-	for i := 0; i < globalsCpu.Memoria.TamanioPagina; i++ {
-  		desplazamiento := mmuUtils.ObtenerDesplazamiento(i)
+	for i := 0; i < tamanio; i++ {
+  		desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica + i)
+
+		if (direccionLogica + i > globalsCpu.Memoria.TamanioPagina) {
+   			clientUtils.Logger.Error(fmt.Sprintf("READ - Error: el desplazamiento %d está fuera del rango de la página", desplazamiento))
+			return nil, fmt.Errorf("desplazamiento fuera de rango")
+		}
 
 		valores := []string{
 			strconv.Itoa(pid),
