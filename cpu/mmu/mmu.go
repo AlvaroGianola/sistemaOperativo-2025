@@ -77,11 +77,11 @@ func ObtenerMarco(pid int, pagina int) (int, error) {
 	marco, encuentraMarco := tlbUtils.ConsultarMarco(pagina) // Actualiza el último uso
 
 	if encuentraMarco {
-		clientUtils.Logger.Info("TLB HIT", "PID", pid, "Página", pagina, "Marco", marco)
+		clientUtils.Logger.Info(fmt.Sprintf("PID: %d - TLB HIT - Pagina: %d", pid, pagina))
 		return marco, nil
 	}
 
-	clientUtils.Logger.Info("TLB MISS", "PID", pid, "Página", pagina)
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - TLB MISS - Pagina: %d", pid, pagina))
 
 	marco, err := ObtenerMarcoMultinivel(pid, pagina, globalsCpu.Memoria.NivelesPaginacion, globalsCpu.Memoria.CantidadEntradas)
 	if err != nil {

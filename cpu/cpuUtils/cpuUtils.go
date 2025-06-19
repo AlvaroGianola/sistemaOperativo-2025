@@ -180,6 +180,7 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 			clientUtils.Logger.Error("Error al pedir la siguiente instruccion a memoria")
 			break
 		}
+		clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - FETCH - Program Counter: %d\n", globalsCpu.ProcesoActual.Pid, globalsCpu.ProcesoActual.Pc))
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", instruccion))
 		//#DECODE
 		cod_op, variables := DecodeInstruccion(instruccion)
@@ -196,7 +197,7 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 			if hayInterrupcion == "FALSE" {
 				clientUtils.Logger.Info("## No hay interrupción, continuando ejecución")
 			} else if hayInterrupcion == "TRUE" {
-				clientUtils.Logger.Info("## Hay interrupción, deteniendo ejecución")
+				clientUtils.Logger.Info("## Llega interrupción al puerto Interrupt")
 				break
 			}
 		}
@@ -282,6 +283,7 @@ func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
 }
 
 func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
+	clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - Ejecutando: %s - %s\n", globalsCpu.ProcesoActual.Pid, cod_op, variables))
 	switch cod_op {
 	case NOOP:
 		clientUtils.Logger.Info("## Ejecutando NOOP")
@@ -389,8 +391,8 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 		return
 	}
 
-	// Log
-	clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Dir. lógica: %d → Dir. física: %d", pid, direccionLogica, marco))
+	//Log
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", globalsCpu.ProcesoActual.Pid, pagina, marco))
 
 	contenido, err := consultaRead(pid, marco, direccionLogica, tamanio)
 
@@ -410,7 +412,8 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 		return
 	}
 
-	clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d, Contenido: %s", pid, pagina, contenido[:tamanio]))
+	//Log
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: READ - Dirección Física: %d - Valor: %s.\n", pid, marco, contenido[:globalsCpu.Memoria.TamanioPagina]))
 	fmt.Println(contenido[:tamanio])
 
 }
@@ -422,10 +425,10 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		_, encontroDato := cacheUtils.BuscarPaginaEnCache(pid, pagina)
 		if encontroDato {
-			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d, Contenido %s → Cache HIT", pid, pagina, dato))
+			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d, Contenido %s → Cache HIT\n", pid, pagina, dato))
 			err := cacheUtils.ModificarContenidoCache(pid, pagina, dato, direccionLogica)
 			if err != nil {
-				clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al modificar contenido en cache: %s", err))
+				clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al modificar contenido en cache: %s\n", err))
 				return
 			} else {
 				return
@@ -440,6 +443,9 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		return
 	}
 
+	//Log
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", globalsCpu.ProcesoActual.Pid, pagina, marco))
+
 	consultaWrite(pid, marco, []byte(dato), direccionLogica)
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
@@ -449,7 +455,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 	}
 
 	// Log
-	clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Dir. lógica: %d → Dir. física: %d, Dato: %s", pid, direccionLogica, marco, dato))
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: WRITE - Dirección Física: %d - Valor: %s.\n", pid, marco, dato))
 
 }
 

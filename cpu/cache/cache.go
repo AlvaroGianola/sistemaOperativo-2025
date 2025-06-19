@@ -1,8 +1,10 @@
 package cache
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
@@ -20,12 +22,12 @@ func BuscarPaginaEnCache(pid int, pagina int) ([]byte, bool) {
 		if entrada.Pid == pid && entrada.Pagina == pagina {
 			//CACHE DELAY
 			time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
-			clientUtils.Logger.Info(fmt.Sprintf("Cache HIT - PID %d Página %d", pid, pagina))
+			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache HIT - Pagina: %d", pid, pagina))
 			return entrada.Contenido, true
 		}
 	}
 
-	clientUtils.Logger.Info(fmt.Sprintf("Cache MISS - PID %d Página %d", pid, pagina))
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache MISS - Pagina: %d", pid, pagina))
 	return nil, false
 }
 
@@ -75,52 +77,73 @@ func buscarEspacioLibrePagina(pid int, contenido []byte) int {
 }
 
 func AgregarACache(pid int, direccionLogica int, dato []byte) {
+	if dato == nil {
+		return
+	}
+
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
 
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
-	cont := make([]byte, globalsCpu.Memoria.TamanioPagina)
+	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
+	tamPagina := globalsCpu.Memoria.TamanioPagina
+	bytesACopiar := min(len(dato), tamPagina-desplazamiento)
+	restante := dato[bytesACopiar:]
+	sePasa := (desplazamiento + len(dato)) > tamPagina
 
-	for i := 0; i < globalsCpu.Memoria.TamanioPagina; i++ {
-		//CACHE DELAY
-		time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
-		if i >= len(dato) {
-			cont[i] = 0
-		} else {
-			cont[i] = dato[i]
-		}
-	}
+	// Delay de caché
+	time.Sleep(time.Millisecond * time.Duration(globalsCpu.CpuConfig.CacheDelay))
+
+	// Copiar contenido en la página nueva
+	cont := make([]byte, tamPagina)
+	copy(cont[desplazamiento:], dato[:bytesACopiar])
 
 	entrada := globalsCpu.EntradaCache{
 		Pid:        pid,
 		Pagina:     pagina,
 		Contenido:  cont,
 		Uso:        true,
-		Modificado: false,
+		Modificado: true,
 	}
 
 	if len(globalsCpu.Cache) < globalsCpu.CpuConfig.CacheEntries {
 		globalsCpu.Cache = append(globalsCpu.Cache, entrada)
 		clientUtils.Logger.Info(fmt.Sprintf("Cache Add - PID %d Página %d", pid, pagina))
+
+		if sePasa {
+			nuevaDireccion := direccionLogica + bytesACopiar
+			AgregarACache(pid, nuevaDireccion, restante)
+		}
 		return
 	}
 
 	for {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
-		if globalsCpu.CpuConfig.CacheReplacment == "CLOCK" {
+
+		switch strings.ToLower(globalsCpu.CpuConfig.CacheReplacment) {
+		case "clock":
 			if !actual.Uso {
 				reemplazarEntradaCache(globalsCpu.PunteroClock, entrada)
+				if sePasa {
+					nuevaDireccion := direccionLogica + bytesACopiar
+					AgregarACache(pid, nuevaDireccion, restante)
+				}
 				return
-			} else {
-				actual.Uso = false
 			}
-		} else if globalsCpu.CpuConfig.CacheReplacment == "CLOCK-M" {
+			actual.Uso = false
+
+		case "clock-m":
 			if !actual.Uso && !actual.Modificado {
 				reemplazarEntradaCache(globalsCpu.PunteroClock, entrada)
+				if sePasa {
+					nuevaDireccion := direccionLogica + bytesACopiar
+					AgregarACache(pid, nuevaDireccion, restante)
+				}
 				return
 			}
 			actual.Uso = false
 		}
+
 		globalsCpu.PunteroClock = (globalsCpu.PunteroClock + 1) % len(globalsCpu.Cache)
 	}
 }
@@ -131,10 +154,11 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 	if evictada.Modificado {
 		clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - Página %d modificada → escribir en Memoria", evictada.Pagina))
 
+		contenidoBase64 := base64.StdEncoding.EncodeToString(evictada.Contenido)
 		valores := []string{
 			strconv.Itoa(evictada.Pid),
 			strconv.Itoa(evictada.Pagina),
-			string(evictada.Contenido),
+			contenidoBase64,
 		}
 		paquete := clientUtils.Paquete{Valores: valores}
 
@@ -144,10 +168,12 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 			"writePagina",
 			paquete,
 		)
+
+		clientUtils.Logger.Info(fmt.Sprintf("Se envió contenido a Memoria: PID %d Página %d", evictada.Pid, evictada.Pagina))
 	}
 
-	//CACHE DELAY
-	time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
+	time.Sleep(time.Millisecond * time.Duration(globalsCpu.CpuConfig.CacheDelay))
+
 	globalsCpu.Cache[indice] = nueva
 	clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - PID %d Página %d → Nueva entrada", nueva.Pid, nueva.Pagina))
 }
@@ -157,32 +183,39 @@ func FlushPaginasModificadas(pid int) {
 	defer globalsCpu.CacheMutex.Unlock()
 	globalsCpu.TlbMutex.Lock()
 	defer globalsCpu.TlbMutex.Unlock()
-	//1-Recorro las caches modificadas y con la tlb consigo su marco
-	for _, entrada := range globalsCpu.Cache {
+
+	for j, entrada := range globalsCpu.Cache {
 		if entrada.Pid == pid && entrada.Modificado {
 			marco, encontroMarco := tlbUtils.ConsultarMarco(entrada.Pagina)
 			if !encontroMarco {
 				clientUtils.Logger.Error(fmt.Sprintf("No se encontró el marco para la página %d del PID %d", entrada.Pagina, pid))
 				continue
 			}
-			//2-Envio a memoria el contenido de la página
-			valores := []string{
-				strconv.Itoa(pid),
-				strconv.Itoa(marco),
-				string(entrada.Contenido),
+
+			// Enviar bit a bit el contenido
+			for i := 0; i < len(entrada.Contenido); i++ {
+				bit := string(entrada.Contenido[i])
+				valores := []string{
+					strconv.Itoa(pid),
+					strconv.Itoa(marco),
+					bit,
+					strconv.Itoa(i), // posición del bit en la página
+				}
+
+				// CACHE DELAY por bit
+				time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
+
+				paquete := clientUtils.Paquete{Valores: valores}
+				clientUtils.EnviarPaquete(
+					globalsCpu.CpuConfig.IpMemory,
+					globalsCpu.CpuConfig.PortMemory,
+					"writeMemoria",
+					paquete,
+				)
+				//Log
+				clientUtils.Logger.Info(fmt.Sprintf("[Flush] PID %d: página %d, marco %d, bit pos %d -> '%s' enviado", pid, entrada.Pagina, marco, i, bit))
 			}
-
-			//CACHE DELAY
-			time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
-
-			paquete := clientUtils.Paquete{Valores: valores}
-			clientUtils.EnviarPaquete(
-				globalsCpu.CpuConfig.IpMemory,
-				globalsCpu.CpuConfig.PortMemory,
-				"writePagina",
-				paquete,
-			)
-			clientUtils.Logger.Info(fmt.Sprintf("Cargando página %d del PID %d a la caché", entrada.Pagina, pid))
+			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Memory Update - Página: %d - Frame: %d", pid, j, marco))
 		}
 	}
 }
