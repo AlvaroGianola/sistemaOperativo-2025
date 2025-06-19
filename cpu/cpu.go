@@ -23,8 +23,8 @@ func main() {
 
 	// Configurar CPU
 	globalscpu.CpuConfig = cpuUtils.IniciarConfiguracion("config.json")
-	cpuUtils.ObtenerInfoMemoria()
 	globalscpu.SetIdentificador(identificador)
+	cpuUtils.ObtenerInfoMemoria()
 
 	// Registrar endpoints
 	mux := http.NewServeMux()
