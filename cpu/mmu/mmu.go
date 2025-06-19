@@ -25,7 +25,6 @@ func ObtenerDesplazamiento(direccionLogica int) int {
 func CalcularEntradaNivel(nroPagina, nivel, cantEntradas, niveles int) int {
 	exponente := niveles - nivel
 	divisor := int(math.Pow(float64(cantEntradas), float64(exponente)))
-	println(divisor)
 	return int(math.Floor(float64(nroPagina)/float64(divisor))) % cantEntradas
 }
 
@@ -39,6 +38,10 @@ func ObtenerMarcoMultinivel(pid int, direccionLogica int, niveles int, entradasP
 		entrada := CalcularEntradaNivel(nroPagina, nivel, entradasPorTabla, niveles)
 		valores = append(valores, strconv.Itoa(entrada))
 	}
+
+	desplazamiento := strconv.Itoa(ObtenerDesplazamiento(direccionLogica))
+
+	valores = append(valores, desplazamiento)
 
 	paquete := clientUtils.Paquete{Valores: valores}
 
