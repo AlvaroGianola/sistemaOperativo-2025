@@ -72,9 +72,10 @@ func accederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&p)
 
 	fmt.Printf("📦 accederMarcoUsuario - Recibido: %+v\n", p.Valores)
-	pagina, _ := strconv.Atoi(p.Valores[len(p.Valores)-1])
+	marco, _ := strconv.Atoi(p.Valores[len(p.Valores)-1])
+	desplazamiento, _ := strconv.Atoi(p.Valores[len(p.Valores)])
 	fmt.Println(p.Valores)
-	w.Write([]byte(fmt.Sprintf("%d", 1000+pagina))) // Marco ficticio
+	w.Write([]byte(fmt.Sprintf("%d", marco + desplazamiento))) // Marco ficticio
 }
 
 func readMemoria(w http.ResponseWriter, r *http.Request) {
@@ -102,8 +103,10 @@ func readPagina(w http.ResponseWriter, r *http.Request) {
 	var p Paquete
 	_ = json.NewDecoder(r.Body).Decode(&p)
 
-	pagina := p.Valores[1]
-	w.Write([]byte("ContenidoDePagina" + pagina))
+	marco := p.Valores[1]
+	desplazamiento := p.Valores[2]
+
+	w.Write([]byte(fmt.Sprintf("contenido en el marco %s con desplazamiento %s", marco, desplazamiento)))
 }
 
 func tamPagina(w http.ResponseWriter, r *http.Request) {
