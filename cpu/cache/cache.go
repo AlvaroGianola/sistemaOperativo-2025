@@ -6,9 +6,9 @@ import (
 	"time"
 
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
+	mmuUtils "github.com/sisoputnfrba/tp-golang/cpu/mmu"
 	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
-	mmuUtils "github.com/sisoputnfrba/tp-golang/cpu/mmu"
 )
 
 func BuscarPaginaEnCache(pid int, pagina int) ([]byte, bool) {
@@ -29,21 +29,27 @@ func BuscarPaginaEnCache(pid int, pagina int) ([]byte, bool) {
 	return nil, false
 }
 
-func ModificarContenidoCache(pid int, pagina int, contenido string) error {
-	globalsCpu.CacheMutex.Lock()
-	defer globalsCpu.CacheMutex.Unlock()
+func ModificarContenidoCache(pid int, pagina int, contenido string, direccionLogica int) error {
 
-	contenidoPagina,_ := BuscarPaginaEnCache(pid, pagina)
+	contenidoPagina, _ := BuscarPaginaEnCache(pid, pagina)
 
-	if (len(contenido) > buscarEspacioLibrePagina(pid, contenidoPagina)) {
+	if len(contenido) > buscarEspacioLibrePagina(pid, contenidoPagina) {
 		clientUtils.Logger.Error("No hay espacio suficiente en la página para modificar el contenido")
 		return fmt.Errorf("no hay espacio suficiente en la página para modificar el contenido")
 	}
 
+	globalsCpu.CacheMutex.Lock()
+	defer globalsCpu.CacheMutex.Unlock()
+
 	for i, entrada := range globalsCpu.Cache {
 		if entrada.Pid == pid && entrada.Pagina == pagina {
-			globalsCpu.Cache[i].Contenido = []byte(contenido)
+			for j := 0; j < len(contenido); j++ {
+				desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica + j)
+				globalsCpu.Cache[i].Contenido[desplazamiento] = []byte(contenido)[j]
+			}
 			globalsCpu.Cache[i].Modificado = true
+			//CACHE DELAY
+			time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
 			clientUtils.Logger.Info(fmt.Sprintf("Cache Modify - PID %d Página %d", pid, pagina))
 			return nil
 		}
@@ -53,39 +59,37 @@ func ModificarContenidoCache(pid int, pagina int, contenido string) error {
 	return fmt.Errorf("no se encontró la entrada en caché")
 }
 
-
-func buscarEspacioLibrePagina(pid int, contenido []byte) (int){
+func buscarEspacioLibrePagina(pid int, contenido []byte) int {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
 
 	var espacioLibre int = 0
 
-	for i:= 0; i < len(contenido); i++ {
+	for i := 0; i < len(contenido); i++ {
 		if contenido[i] == 0 {
-		   espacioLibre++
-  		}
-  	}
+			espacioLibre++
+		}
+	}
 
 	return espacioLibre
 }
 
 func AgregarACache(pid int, direccionLogica int, dato []byte) {
 	globalsCpu.CacheMutex.Lock()
- 	defer globalsCpu.CacheMutex.Unlock()
-	//CACHE DELAY
-	time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
+	defer globalsCpu.CacheMutex.Unlock()
 
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 	cont := make([]byte, globalsCpu.Memoria.TamanioPagina)
 
 	for i := 0; i < globalsCpu.Memoria.TamanioPagina; i++ {
+		//CACHE DELAY
+		time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
 		if i >= len(dato) {
 			cont[i] = 0
 		} else {
 			cont[i] = dato[i]
 		}
 	}
-
 
 	entrada := globalsCpu.EntradaCache{
 		Pid:        pid,
@@ -142,6 +146,8 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 		)
 	}
 
+	//CACHE DELAY
+	time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
 	globalsCpu.Cache[indice] = nueva
 	clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - PID %d Página %d → Nueva entrada", nueva.Pid, nueva.Pagina))
 }
@@ -165,6 +171,10 @@ func FlushPaginasModificadas(pid int) {
 				strconv.Itoa(marco),
 				string(entrada.Contenido),
 			}
+
+			//CACHE DELAY
+			time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
+
 			paquete := clientUtils.Paquete{Valores: valores}
 			clientUtils.EnviarPaquete(
 				globalsCpu.CpuConfig.IpMemory,
@@ -172,7 +182,6 @@ func FlushPaginasModificadas(pid int) {
 				"writePagina",
 				paquete,
 			)
-
 			clientUtils.Logger.Info(fmt.Sprintf("Cargando página %d del PID %d a la caché", entrada.Pagina, pid))
 		}
 	}
