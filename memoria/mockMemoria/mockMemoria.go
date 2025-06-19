@@ -39,9 +39,8 @@ func main() {
 
 	mux.HandleFunc("/obtenerEntradaTabla", entradaTabla)
 	mux.HandleFunc("/accederMarcoUsuario", accederMarcoUsuario)
-	mux.HandleFunc("/readMemoria", readMemoria)
 	mux.HandleFunc("/writeMemoria", writeMemoria)
-	mux.HandleFunc("/readPagina", readPagina)
+	mux.HandleFunc("/readMemoria", readMemoria)
 	mux.HandleFunc("/obtenerTamPagina", tamPagina)
 	mux.HandleFunc("/siguienteInstruccion", memoriaUtils.SiguienteInstruccion)
 	mux.HandleFunc("/iniciarProceso", memoriaUtils.IniciarProceso)
@@ -68,45 +67,39 @@ func entradaTabla(w http.ResponseWriter, r *http.Request) {
 }
 
 func accederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
-	var p Paquete
+	var p clientUtils.Paquete
 	_ = json.NewDecoder(r.Body).Decode(&p)
 
 	fmt.Printf("📦 accederMarcoUsuario - Recibido: %+v\n", p.Valores)
-	marco, _ := strconv.Atoi(p.Valores[len(p.Valores)-1])
-	desplazamiento, _ := strconv.Atoi(p.Valores[len(p.Valores)])
+	marco, _ := strconv.Atoi(p.Valores[len(p.Valores)-2])
+	desplazamiento, _ := strconv.Atoi(p.Valores[len(p.Valores)-1])
 	fmt.Println(p.Valores)
-	w.Write([]byte(fmt.Sprintf("%d", marco + desplazamiento))) // Marco ficticio
-}
-
-func readMemoria(w http.ResponseWriter, r *http.Request) {
-	var p Paquete
-	_ = json.NewDecoder(r.Body).Decode(&p)
-
-	tam, _ := strconv.Atoi(p.Valores[2])
-	contenido := "X"
-	result := ""
-	for i := 0; i < tam; i++ {
-		result += contenido
-	}
-	w.Write([]byte(result))
+	w.Write([]byte(fmt.Sprintf("%d", marco+desplazamiento))) // Marco ficticio
 }
 
 func writeMemoria(w http.ResponseWriter, r *http.Request) {
 	var p Paquete
 	_ = json.NewDecoder(r.Body).Decode(&p)
 
-	log.Printf("WRITE: PID %s Marco %s Dato %s\n", p.Valores[0], p.Valores[1], p.Valores[2])
+	log.Printf("WRITE: PID %s Marco %s Desplazamiento %s Dato %s\n", p.Valores[0], p.Valores[1], p.Valores[2], p.Valores[3])
 	w.Write([]byte("OK"))
 }
 
-func readPagina(w http.ResponseWriter, r *http.Request) {
+func readMemoria(w http.ResponseWriter, r *http.Request) {
 	var p Paquete
 	_ = json.NewDecoder(r.Body).Decode(&p)
 
 	marco := p.Valores[1]
 	desplazamiento := p.Valores[2]
 
-	w.Write([]byte(fmt.Sprintf("contenido en el marco %s con desplazamiento %s", marco, desplazamiento)))
+	marcoInt, _ := strconv.Atoi(marco)
+	desplazamientoInt, _ := strconv.Atoi(desplazamiento)
+
+	res := strconv.Itoa(marcoInt + desplazamientoInt)
+
+	log.Println(res)
+
+	w.Write([]byte(res))
 }
 
 func tamPagina(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +107,7 @@ func tamPagina(w http.ResponseWriter, r *http.Request) {
 	tamanioDePagina := 64
 	niveles := 2
 	entradas := 256
-	tam := []byte{byte(tamanioDePagina), byte(niveles), byte(entradas)}
-	w.Write([]byte(tam)) // Simula un JSON array
+	valores := []int{tamanioDePagina, niveles, entradas}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(valores)
 }
