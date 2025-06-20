@@ -569,7 +569,7 @@ func countMarcosLibres() int {
 
 func asignarMemoria(pid int, instrucciones []byte) bool {
 	pageSize := globalsMemoria.MemoriaConfig.PageSize
-	entriesPerPage := globalsMemoria.MemoriaConfig.EntriesPerPage
+
 	numLevels := globalsMemoria.MemoriaConfig.NumberOfLevels
 
 	// Validar que el pid no sea mayor al tamaño del slice
