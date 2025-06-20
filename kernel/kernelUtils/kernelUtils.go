@@ -838,7 +838,6 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// saco el proceso de EXEC y acumulo cuanto tiempo estuvo ejecutando
-	println("CPU:", cpuId, "ejecutando:", cpu.PIDenEjecucion)
 	proceso, ok := Plp.pcp.execState.BuscarYSacarPorPID(cpu.PIDenEjecucion)
 	tiempoEjecucion := proceso.timeInState()
 	proceso.MT.execTime += tiempoEjecucion
@@ -1076,7 +1075,6 @@ func IniciarKernel(filePath string, processSize uint) {
 func IniciarProceso(filePath string, processSize uint) {
 	muProximoPID.Lock()
 	nuevaPCB := PCB{PID: proximoPID, PC: 0, FilePath: filePath, ProcessSize: processSize, estimacion: float64(globalskernel.KernelConfig.InitialEstimate)}
-	println(filePath)
 	proximoPID++
 	muProximoPID.Unlock()
 

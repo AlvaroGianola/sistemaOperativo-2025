@@ -117,7 +117,6 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 
 		//#FETCH
 		instruccion, ok := PedirSiguienteInstruccionMemoria()
-		println(instruccion)
 		if !ok {
 
 			clientUtils.Logger.Error("Error al pedir la siguiente instruccion a memoria")
@@ -229,7 +228,6 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 
 	default:
 		if cod_op != IO && cod_op != INIT_PROC && cod_op != DUMP_MEMORY && cod_op != EXIT {
-			fmt.Println(cod_op)
 			clientUtils.Logger.Error("## Instruccion no reconocida")
 		} else {
 			Syscall(proceso, cod_op, variables)
