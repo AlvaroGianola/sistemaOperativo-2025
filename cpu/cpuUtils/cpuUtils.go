@@ -129,7 +129,8 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info(fmt.Sprintf("## Llega proceso - PID: %d, PC: %d", pid, pc))
 	globalsCpu.ProcesoActual.Pc = pc
 	globalsCpu.ProcesoActual.Pid = pid
-
+	globalsCpu.Interrupciones.ExisteInterrupcion = false
+	globalsCpu.Interrupciones.Motivo = ""
 	HandleProceso(globalsCpu.ProcesoActual)
 
 	w.WriteHeader(http.StatusOK)
@@ -213,6 +214,11 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 			clientUtils.Logger.Error("## Instrucción inválida, abortando ejecución")
 			break
 		}
+		if globalsCpu.Interrupciones.ExisteInterrupcion {
+			clientUtils.Logger.Info("## Interrupcion recibida")
+			EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, globalsCpu.Interrupciones.Motivo, nil)
+			break
+		}
 	}
 
 }
@@ -229,9 +235,11 @@ func PreguntarSiHayInterrupcion() (string, bool) {
 	return string(interrupcion), true
 }
 
-// Simula la recepción de una interrupción
 func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("## Llega interrupción al puerto Interrupt")
+	paquete := serverUtils.RecibirPaquetes(w, r)
+	globalsCpu.Interrupciones.ExisteInterrupcion = true
+	globalsCpu.Interrupciones.Motivo = paquete.Valores[0]
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -373,6 +381,7 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 // 4-Si no existe en la tlb, buscar en memoria
 // 5-Escribir o leer el contenido
 func readMemoria(pid int, direccionLogica int, tamanio int) {
+
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
 	if globalsCpu.CpuConfig.CacheEntries > 0 {

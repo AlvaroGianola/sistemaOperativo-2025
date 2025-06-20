@@ -48,6 +48,11 @@ type EntradaCache struct {
 	Modificado bool
 }
 
+type Interrupcion struct {
+	ExisteInterrupcion bool
+	Motivo             string
+}
+
 var (
 	Tlb      []EntradaTLB
 	TlbMutex sync.Mutex
@@ -56,6 +61,8 @@ var (
 	CacheMutex   sync.Mutex
 	PunteroClock int
 )
+
+var Interrupciones Interrupcion = Interrupcion{}
 
 var CpuConfig *Config
 
