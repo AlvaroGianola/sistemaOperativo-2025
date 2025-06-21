@@ -18,12 +18,13 @@ func main() {
 	}
 	identificador := os.Args[1]
 
+	// Configurar logger
+	clientUtils.ConfigurarLogger("cpu" + identificador + ".log")
+
 	// Configurar CPU
 	globalscpu.CpuConfig = cpuUtils.IniciarConfiguracion("config.json")
 	globalscpu.SetIdentificador(identificador)
-
-	// Configurar logger
-	clientUtils.ConfigurarLogger("cpu" + identificador + ".log")
+	cpuUtils.ObtenerInfoMemoria()
 
 	// Registrar endpoints
 	mux := http.NewServeMux()
@@ -39,6 +40,8 @@ func main() {
 
 	// Hacer handshake al Kernel
 	cpuUtils.EnviarHandshakeAKernel(identificador, puertoLibre)
+
+	//TODO: HANDSHAKE CON MEMORIA (CAMBIANDO PUERTO)
 
 	// Servir usando el listener ya abierto
 	err = http.Serve(listener, mux)
