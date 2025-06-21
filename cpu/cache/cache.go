@@ -177,7 +177,6 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 	globalsCpu.Cache[indice] = nueva
 	clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - PID %d Página %d → Nueva entrada", nueva.Pid, nueva.Pagina))
 }
-
 func FlushPaginasModificadas(pid int) {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
@@ -195,11 +194,13 @@ func FlushPaginasModificadas(pid int) {
 			// Enviar bit a bit el contenido
 			for i := 0; i < len(entrada.Contenido); i++ {
 				bit := string(entrada.Contenido[i])
+				if bit == string(byte(0)) {
+					continue
+				}
 				valores := []string{
 					strconv.Itoa(pid),
-					strconv.Itoa(marco),
+					strconv.Itoa(marco + i),
 					bit,
-					strconv.Itoa(i), // posición del bit en la página
 				}
 
 				// CACHE DELAY por bit
@@ -219,7 +220,6 @@ func FlushPaginasModificadas(pid int) {
 		}
 	}
 }
-
 func LimpiarCache() {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()

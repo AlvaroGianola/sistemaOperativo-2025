@@ -513,8 +513,7 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 
 		valores := []string{
 			strconv.Itoa(pid),
-			strconv.Itoa(marco),
-			strconv.Itoa(desplazamiento),
+			strconv.Itoa(marco + desplazamiento),
 		}
 		paquete := clientUtils.Paquete{Valores: valores}
 
