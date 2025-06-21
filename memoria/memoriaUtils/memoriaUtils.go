@@ -206,6 +206,7 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
+		clientUtils.Logger.Info("Movimiento recibido", "movimiento", valor)
 		movimientos = append(movimientos, valor)
 	}
 
@@ -219,7 +220,7 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	// Acceder recursivamente a las tablas
 	actual := &proceso.TablaPaginasGlobal // tabla raíz
 
-	for nivel := 0; nivel < len(movimientos)-1; nivel++ {
+	for nivel := 0; nivel < len(movimientos)-2; nivel++ {
 		mov := movimientos[nivel]
 		tabla, ok := actual.Entradas[mov].(*globalsMemoria.TablaPaginas)
 		if !ok {

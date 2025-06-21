@@ -33,9 +33,11 @@ func main() {
 	// Endpoints que reciben peticiones desde CPU
 	mux.HandleFunc("/obtenerConfiguracionMemoria", memoriaUtils.ObtenerConfiguracionMemoria)
 	mux.HandleFunc("/siguienteInstruccion", memoriaUtils.SiguienteInstruccion)
-	mux.HandleFunc("/accederMarcoUduario", memoriaUtils.AccederMarcoUsuario)
+	mux.HandleFunc("/accederMarcoUsuario", memoriaUtils.AccederMarcoUsuario)
 	mux.HandleFunc("/readPagina", memoriaUtils.LeerPagina)
 	mux.HandleFunc("/writePagina", memoriaUtils.EscribirPagina)
+	mux.HandleFunc("/writeMemoria", memoriaUtils.EscribirDireccionFisica)
+	mux.HandleFunc("/readMemoria", memoriaUtils.LeerDireccionFisica)
 
 	// Levanta el servidor en el puerto definido por configuración
 	direccion := fmt.Sprintf("%s:%d", globalsMemoria.MemoriaConfig.IpMemory, globalsMemoria.MemoriaConfig.PortMemory)

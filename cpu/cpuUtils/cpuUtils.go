@@ -483,9 +483,8 @@ func consultaWrite(pid int, marco int, dato []byte, direccionLogica int) {
 
 		valores := []string{
 			strconv.Itoa(pid),
-			strconv.Itoa(marco),
-			strconv.Itoa(desplazamiento),
-			string(dato[i]),
+			strconv.Itoa(marco + desplazamiento),
+			string(strconv.Itoa(int(dato[i]))),
 		}
 		paquete := clientUtils.Paquete{Valores: valores}
 
