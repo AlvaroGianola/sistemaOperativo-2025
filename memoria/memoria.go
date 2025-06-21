@@ -19,6 +19,9 @@ func main() {
 
 	globalsMemoria.MemoriaUsuario = make([]byte, globalsMemoria.MemoriaConfig.MemorySize)
 	globalsMemoria.BitmapMarcosLibres = make([]bool, globalsMemoria.MemoriaConfig.MemorySize/globalsMemoria.MemoriaConfig.PageSize)
+	for i := range globalsMemoria.BitmapMarcosLibres {
+		globalsMemoria.BitmapMarcosLibres[i] = true
+	}
 
 	// Crea el multiplexer HTTP y registra los endpoints que usará Memoria
 	mux := http.NewServeMux()

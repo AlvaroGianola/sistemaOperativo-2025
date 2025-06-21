@@ -4,6 +4,15 @@ import (
 	"sync"
 )
 
+type Proceso struct {
+	Pid                int
+	Instrucciones      []string
+	Pc                 int // ver de hacer un constructor para poder setear siempre en cero este
+	TablaPaginasGlobal TablaPaginas
+	Size               int
+	Metricas           MetricasProceso
+}
+
 type Config struct {
 	PortMemory     int    `json:"port_memory"`
 	IpMemory       string `json:"ip_memory"`
@@ -20,14 +29,6 @@ type Config struct {
 }
 
 var MemoriaConfig *Config
-
-type Proceso struct {
-	Pid                int
-	Pc                 int
-	TablaPaginasGlobal TablaPaginas
-	Size               int
-	Metricas           MetricasProceso
-}
 
 type MetricasProceso struct {
 	AccesosATablas           int
@@ -112,3 +113,4 @@ var ProcesosEnMemoria []Proceso
 
 var MutexProcesos sync.Mutex
 var MutexBitmapMarcosLibres sync.Mutex
+var MutexContadorMarcosLibres sync.Mutex
