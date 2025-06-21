@@ -286,7 +286,7 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 
 	clientUtils.Logger.Info("Marco de usuario accedido", "pid", pid, "marco", direccionFisica)
 
-	time.Sleep(time.Duration(memDelay))
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 	w.Write([]byte(strconv.Itoa(direccionFisica)))
 	w.WriteHeader(http.StatusOK)
 
@@ -487,8 +487,8 @@ func ObtenerConfiguracionMemoria(w http.ResponseWriter, r *http.Request) {
 		EntradasPorNivel int `json:"entradasPorNivel"`
 	}{
 		TamanioPagina:    globalsMemoria.MemoriaConfig.PageSize,
-		Niveles:          niveles,
-		EntradasPorNivel: entradasPorNivel,
+		Niveles:          globalsMemoria.MemoriaConfig.NumberOfLevels,
+		EntradasPorNivel: globalsMemoria.MemoriaConfig.EntriesPerPage,
 	}
 	// Enviar la configuración como un JSON
 	configuracionJSON, err := json.Marshal(configuracion)
@@ -664,8 +664,8 @@ func insertarPaginaEnJerarquia(tabla *globalsMemoria.TablaPaginas, pagina *globa
 
 func calcularIndice(nroPagina, nivelActual int) int {
 	divisor := 1
-	for i := 0; i < niveles-nivelActual; i++ {
-		divisor *= entradasPorNivel
+	for i := 0; i < globalsMemoria.MemoriaConfig.NumberOfLevels-nivelActual; i++ {
+		divisor *= globalsMemoria.MemoriaConfig.EntriesPerPage
 	}
 	return (nroPagina / divisor) % globalsMemoria.MemoriaConfig.NumberOfLevels
 }
