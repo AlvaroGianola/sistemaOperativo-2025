@@ -181,7 +181,7 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 			clientUtils.Logger.Error("Error al pedir la siguiente instruccion a memoria")
 			break
 		}
-		clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - FETCH - Program Counter: %d\n", globalsCpu.ProcesoActual.Pid, globalsCpu.ProcesoActual.Pc))
+		clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - FETCH - Program Counter: %d", globalsCpu.ProcesoActual.Pid, globalsCpu.ProcesoActual.Pc))
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", instruccion))
 		//#DECODE
 		cod_op, variables := DecodeInstruccion(instruccion)
@@ -191,16 +191,11 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		ExecuteInstruccion(proceso, cod_op, variables)
 		//#CHECK
 		// le pregunto a kernel si hay una interrupción
-		hayInterrupcion, ok := PreguntarSiHayInterrupcion()
-		if !ok {
-			clientUtils.Logger.Error("Error al preguntar si hay interrupción")
-		} else {
-			if hayInterrupcion == "FALSE" {
-				clientUtils.Logger.Info("## No hay interrupción, continuando ejecución")
-			} else if hayInterrupcion == "TRUE" {
-				clientUtils.Logger.Info("## Llega interrupción al puerto Interrupt")
-				break
-			}
+		clientUtils.Logger.Info("## Verificando interrupciones")
+		if globalsCpu.Interrupciones.ExisteInterrupcion {
+			clientUtils.Logger.Info("## Interrupcion recibida")
+			EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, globalsCpu.Interrupciones.Motivo, nil)
+			break
 		}
 
 		// Si la instrucción es EXIT o INVALIDA, salimos del ciclo
@@ -214,25 +209,9 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 			clientUtils.Logger.Error("## Instrucción inválida, abortando ejecución")
 			break
 		}
-		if globalsCpu.Interrupciones.ExisteInterrupcion {
-			clientUtils.Logger.Info("## Interrupcion recibida")
-			EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, globalsCpu.Interrupciones.Motivo, nil)
-			break
-		}
+
 	}
 
-}
-
-func PreguntarSiHayInterrupcion() (string, bool) {
-	valores := []string{strconv.Itoa(globalsCpu.ProcesoActual.Pid), strconv.Itoa(globalsCpu.ProcesoActual.Pc)}
-	paquete := clientUtils.Paquete{Valores: valores}
-	interrupcion := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "recibirInterrupcion", paquete)
-
-	if interrupcion == nil {
-		clientUtils.Logger.Error("No se recibió respuesta de Kernel")
-		return "", false
-	}
-	return string(interrupcion), true
 }
 
 func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {

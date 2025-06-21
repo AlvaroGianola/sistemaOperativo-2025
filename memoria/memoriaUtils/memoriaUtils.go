@@ -77,7 +77,6 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientUtils.Logger.Info("LLEGUE BUSCAR")
 	////////////////////////////////////////////////////////////
 
 	//esto va a leer el path
@@ -90,14 +89,10 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 
 	listaInstrucciones := ParsearInstrucciones(instruccionesSinParsear)
 
-	clientUtils.Logger.Info("LLEGUE INSTRUCCIONES")
-
 	if EspacioLibre() < size {
 		http.Error(w, "Espacio en memoria insuficiete.", http.StatusBadRequest)
 		return
 	}
-
-	clientUtils.Logger.Info("LLEGUE ESPACIO")
 
 	errInterno := !asignarMemoria(pid, listaInstrucciones)
 	if errInterno {
@@ -170,8 +165,9 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proceso := buscarProceso(pid)
-
-	if pc < 0 || pc >= len(proceso.Instrucciones) {
+	clientUtils.Logger.Info("Buscando proceso", "pid", pid)
+	clientUtils.Logger.Info("Proceso encontrado", "pid", pid, "instrucciones", len(proceso.Instrucciones))
+	if pc < 0 || pc > len(proceso.Instrucciones)-1 {
 		clientUtils.Logger.Error("PC fuera de rango:", "pc", pc)
 		http.Error(w, "PC fuera de rango", http.StatusBadRequest)
 		return
