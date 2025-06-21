@@ -190,37 +190,55 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 
-	pid, err := strconv.Atoi(pedido.Valores[0])
-	if err != nil {
-		clientUtils.Logger.Error("Error al parsear PID")
+	if len(pedido.Valores) < 3 {
+		clientUtils.Logger.Error("Error: paquete con cantidad insuficiente de valores")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	// Parsear todos los movimientos
+	// Parsear PID
+	pid, err := strconv.Atoi(pedido.Valores[0])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PID", "valor", pedido.Valores[0])
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	// Parsear entradas de tabla (ignorando el último valor que es el desplazamiento)
 	var movimientos []int
-	for i := 1; i < len(pedido.Valores); i++ {
+	for i := 1; i < len(pedido.Valores)-1; i++ {
 		valor, err := strconv.Atoi(pedido.Valores[i])
 		if err != nil {
-			clientUtils.Logger.Error("Error al parsear movimientos")
+			clientUtils.Logger.Error("Error al parsear entrada de tabla", "indice", i, "valor", pedido.Valores[i])
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
-		clientUtils.Logger.Info("Movimiento recibido", "movimiento", valor)
+		clientUtils.Logger.Info("Entrada de tabla recibida", "nivel", i, "valor", valor)
 		movimientos = append(movimientos, valor)
 	}
 
+	// Parsear desplazamiento (último valor)
+	desplazamientoStr := pedido.Valores[len(pedido.Valores)-1]
+	desplazamiento, err := strconv.Atoi(desplazamientoStr)
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear desplazamiento", "valor", desplazamientoStr)
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	clientUtils.Logger.Info("Desplazamiento recibido", "valor", desplazamiento)
+
+	// Buscar proceso
 	proceso := buscarProceso(pid)
 	if proceso == nil {
-		clientUtils.Logger.Error("Proceso no encontrado:", "pid", pid)
+		clientUtils.Logger.Error("Proceso no encontrado", "pid", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
 	}
 
-	// Acceder recursivamente a las tablas
-	actual := &proceso.TablaPaginasGlobal // tabla raíz
+	// Acceder recursivamente a las tablas de páginas
+	actual := &proceso.TablaPaginasGlobal
 
-	for nivel := 0; nivel < len(movimientos)-2; nivel++ {
+	for nivel := 0; nivel < len(movimientos)-1; nivel++ {
 		mov := movimientos[nivel]
 		tabla, ok := actual.Entradas[mov].(*globalsMemoria.TablaPaginas)
 		if !ok {
@@ -242,13 +260,11 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	}
 
 	direccionFisica := pagina.Marco
-
 	clientUtils.Logger.Info("Marco de usuario accedido", "pid", pid, "marco", direccionFisica)
 
 	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
-	w.Write([]byte(strconv.Itoa(direccionFisica)))
 	w.WriteHeader(http.StatusOK)
-
+	w.Write([]byte(strconv.Itoa(direccionFisica)))
 }
 
 func LeerPagina(w http.ResponseWriter, r *http.Request) {
@@ -422,14 +438,14 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	contenido, err := strconv.Atoi(pedido.Valores[2])
+	contenido := []byte(pedido.Valores[2])
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear contenido")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	globalsMemoria.MemoriaUsuario[direccionFisica] = byte(contenido)
+	globalsMemoria.MemoriaUsuario[direccionFisica] = contenido[0]
 
 	w.WriteHeader(http.StatusOK)
 

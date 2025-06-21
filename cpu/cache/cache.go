@@ -9,7 +9,6 @@ import (
 
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	mmuUtils "github.com/sisoputnfrba/tp-golang/cpu/mmu"
-	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
@@ -180,13 +179,11 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 func FlushPaginasModificadas(pid int) {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
-	globalsCpu.TlbMutex.Lock()
-	defer globalsCpu.TlbMutex.Unlock()
 
 	for j, entrada := range globalsCpu.Cache {
 		if entrada.Pid == pid && entrada.Modificado {
-			marco, encontroMarco := tlbUtils.ConsultarMarco(entrada.Pagina)
-			if !encontroMarco {
+			marco, err := mmuUtils.ObtenerMarco(entrada.Pid, entrada.Pagina)
+			if err != nil {
 				clientUtils.Logger.Error(fmt.Sprintf("No se encontró el marco para la página %d del PID %d", entrada.Pagina, pid))
 				continue
 			}
