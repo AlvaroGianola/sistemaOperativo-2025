@@ -104,9 +104,9 @@ func (t *TablaPaginas) EsPagina() bool {
 	return false
 }
 
-var MemoriaUsuario = make([]byte, MemoriaConfig.MemorySize)
+var MemoriaUsuario []byte
 
-var BitmapMarcosLibres []bool = make([]bool, MemoriaConfig.MemorySize/MemoriaConfig.PageSize)
+var BitmapMarcosLibres []bool
 
 var ProcesosEnMemoria []Proceso
 

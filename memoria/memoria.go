@@ -17,6 +17,9 @@ func main() {
 	// Carga la configuración desde el archivo config.json
 	globalsMemoria.MemoriaConfig = memoriaUtils.IniciarConfiguracion("config.json")
 
+	globalsMemoria.MemoriaUsuario = make([]byte, globalsMemoria.MemoriaConfig.MemorySize)
+	globalsMemoria.BitmapMarcosLibres = make([]bool, globalsMemoria.MemoriaConfig.MemorySize/globalsMemoria.MemoriaConfig.PageSize)
+
 	// Crea el multiplexer HTTP y registra los endpoints que usará Memoria
 	mux := http.NewServeMux()
 

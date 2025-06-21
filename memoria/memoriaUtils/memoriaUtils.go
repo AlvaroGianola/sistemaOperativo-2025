@@ -43,13 +43,6 @@ const (
 	SIZE
 )
 
-var (
-	tamanioPagina    = globalsMemoria.MemoriaConfig.PageSize
-	niveles          = globalsMemoria.MemoriaConfig.NumberOfLevels
-	entradasPorNivel = globalsMemoria.MemoriaConfig.EntriesPerPage
-	memDelay         = globalsMemoria.MemoriaConfig.MemoryDelay
-)
-
 func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 
 	clientUtils.Logger.Info("[Memoria] Petición para inicar proceso recibida desde Kernel")
@@ -330,14 +323,14 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	if tamanioEnviado != tamanioPagina {
+	if tamanioEnviado != globalsMemoria.MemoriaConfig.PageSize {
 		clientUtils.Logger.Error("Tamaño de página no coincide con el configurado")
 		http.Error(w, "Tamaño de página incorrecto", http.StatusBadRequest)
 		return
 	}
 	contenido := []byte{}
 	// ver de implementar semaforos para no leer cosas mientras otro la modifica
-	for i := 0; i < tamanioPagina; i++ {
+	for i := 0; i < globalsMemoria.MemoriaConfig.PageSize; i++ {
 		if marco+i >= len(globalsMemoria.MemoriaUsuario) {
 			clientUtils.Logger.Error("Acceso fuera de rango a la memoria", "marco", marco, "offset", i)
 			http.Error(w, "Acceso fuera de rango a la memoria", http.StatusBadRequest)
@@ -387,13 +380,13 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	if tamanioEnviado != tamanioPagina {
+	if tamanioEnviado != globalsMemoria.MemoriaConfig.PageSize {
 		clientUtils.Logger.Error("Tamaño de página no coincide con el configurado")
 		http.Error(w, "Tamaño de página incorrecto", http.StatusBadRequest)
 		return
 	}
 
-	for i := 0; i < tamanioPagina; i++ {
+	for i := 0; i < globalsMemoria.MemoriaConfig.PageSize; i++ {
 		if marco+i >= len(globalsMemoria.MemoriaUsuario) {
 			clientUtils.Logger.Error("Acceso fuera de rango a la memoria", "marco", marco, "offset", i)
 			http.Error(w, "Acceso fuera de rango a la memoria", http.StatusBadRequest)
@@ -493,7 +486,7 @@ func ObtenerConfiguracionMemoria(w http.ResponseWriter, r *http.Request) {
 		Niveles          int `json:"niveles"`
 		EntradasPorNivel int `json:"entradasPorNivel"`
 	}{
-		TamanioPagina:    tamanioPagina,
+		TamanioPagina:    globalsMemoria.MemoriaConfig.PageSize,
 		Niveles:          niveles,
 		EntradasPorNivel: entradasPorNivel,
 	}
@@ -674,7 +667,7 @@ func calcularIndice(nroPagina, nivelActual int) int {
 	for i := 0; i < niveles-nivelActual; i++ {
 		divisor *= entradasPorNivel
 	}
-	return (nroPagina / divisor) % entradasPorNivel
+	return (nroPagina / divisor) % globalsMemoria.MemoriaConfig.NumberOfLevels
 }
 
 func buscarMarcoLibre() int {
@@ -697,7 +690,7 @@ func liberarTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) {
 		if entrada == nil {
 			return
 		}
-		if nivelActual == niveles {
+		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
 			// Es una página real
 			pagina, ok := entrada.(*globalsMemoria.Pagina)
 			if ok && pagina.Validez {
