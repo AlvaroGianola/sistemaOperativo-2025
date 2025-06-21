@@ -12,6 +12,7 @@ import (
 
 	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
+	globalscpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	mmuUtils "github.com/sisoputnfrba/tp-golang/cpu/mmu"
 	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
@@ -62,7 +63,7 @@ func ObtenerInfoMemoria() {
 	respuesta := clientUtils.EnviarPaqueteConRespuesta(
 		globalsCpu.CpuConfig.IpMemory,
 		globalsCpu.CpuConfig.PortMemory,
-		"obtenerTamPagina",
+		"obtenerConfiguracionMemoria",
 		clientUtils.Paquete{},
 	)
 
@@ -80,7 +81,12 @@ func ObtenerInfoMemoria() {
 	}
 
 	// Si esperás un JSON, podés deserializarlo así:
-	var valores [3]int
+	var valores struct {
+		TamanioPagina    int `json:"tamanioPagina"`
+		Niveles          int `json:"niveles"`
+		EntradasPorNivel int `json:"entradasPorNivel"`
+	}
+
 	err = json.Unmarshal(bodyBytes, &valores)
 	if err != nil {
 		clientUtils.Logger.Error("error decodificando respuesta", "error", err.Error())
@@ -89,18 +95,14 @@ func ObtenerInfoMemoria() {
 
 	// Ahora 'valores' contiene los datos de la respuesta
 
-	tamPagina := valores[0]
-	niveles := valores[1]
-	entradas := valores[2]
-
-	globalsCpu.Memoria.TamanioPagina = tamPagina
-	globalsCpu.Memoria.NivelesPaginacion = niveles
-	globalsCpu.Memoria.CantidadEntradas = entradas
+	globalsCpu.Memoria.TamanioPagina = valores.TamanioPagina
+	globalsCpu.Memoria.NivelesPaginacion = valores.Niveles
+	globalsCpu.Memoria.CantidadEntradas = valores.EntradasPorNivel
 
 	clientUtils.Logger.Info("Informacion de memoria obtenida correctamente",
-		"Tamaño página", tamPagina,
-		"Niveles", niveles,
-		"Entradas por tabla", entradas,
+		"Tamaño página", globalsCpu.Memoria.TamanioPagina,
+		"Niveles", globalsCpu.Memoria.NivelesPaginacion,
+		"Entradas por tabla", globalscpu.Memoria.CantidadEntradas,
 	)
 }
 

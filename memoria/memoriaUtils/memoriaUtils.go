@@ -63,15 +63,13 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//chequeo si el pid ya existe
-	globalsMemoria.MutexProcesos.Lock()
-	defer globalsMemoria.MutexProcesos.Unlock()
-
 	if buscarProceso(pid) != nil {
 		clientUtils.Logger.Error("Proceso con Pid ya existe:", "pid especifico", pid)
 		http.Error(w, "PID ya existe", http.StatusConflict)
 		return
 	}
+
+	clientUtils.Logger.Info("LLEGUE BUSCAR")
 
 	//aca va a leer el path
 	instrucciones, err := os.ReadFile(globalsMemoria.MemoriaConfig.ScriptsPath + pedido.Valores[FILE_PATH])
@@ -81,10 +79,14 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 		return
 	} //esto tamien contempla problemas con el path
 
+	clientUtils.Logger.Info("LLEGUE INSTRUCCIONES")
+
 	if EspacioLibre() < size {
 		http.Error(w, "Espacio en memoria insuficiete.", http.StatusBadRequest)
 		return
 	}
+
+	clientUtils.Logger.Info("LLEGUE ESPACIO")
 
 	errInterno := asignarMemoria(pid, instrucciones)
 	if errInterno {
@@ -498,8 +500,8 @@ func ObtenerConfiguracionMemoria(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write([]byte(configuracionJSON))
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(configuracionJSON))
 
 }
 
