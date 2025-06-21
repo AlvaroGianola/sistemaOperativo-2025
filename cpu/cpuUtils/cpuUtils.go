@@ -139,11 +139,11 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 }
 
 func PedirSiguienteInstruccionMemoria() (string, bool) {
-
+	clientUtils.Logger.Info("estoy en pedirInstrucMem")
 	valores := []string{strconv.Itoa(globalsCpu.ProcesoActual.Pid), strconv.Itoa(globalsCpu.ProcesoActual.Pc)}
 	paquete := clientUtils.Paquete{Valores: valores}
 	instruccion := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpMemory, globalsCpu.CpuConfig.PortMemory, "siguienteInstruccion", paquete)
-
+	clientUtils.Logger.Info(string(instruccion))
 	if instruccion == nil {
 		clientUtils.Logger.Error("No se recibió respuesta de Memoria")
 		return "", false
@@ -173,7 +173,7 @@ func EnviarHandshakeAMemoria(identificador string, puertoLibre int) {
 // handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
 // Por ahora queda como placeholder para mantener la estructura modular
 func HandleProceso(proceso *globalsCpu.Proceso) {
-
+	clientUtils.Logger.Info("estoy en handleproc")
 	for {
 
 		//#FETCH

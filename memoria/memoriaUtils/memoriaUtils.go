@@ -79,10 +79,9 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 
 	clientUtils.Logger.Info("LLEGUE BUSCAR")
 	////////////////////////////////////////////////////////////
-	Path := pedido.Valores[FILE_PATH]
 
 	//esto va a leer el path
-	instruccionesSinParsear, err := os.ReadFile(Path)
+	instruccionesSinParsear, err := os.ReadFile(globalsMemoria.MemoriaConfig.ScriptsPath + pedido.Valores[FILE_PATH])
 	if err != nil {
 		clientUtils.Logger.Error("Error al leer el path:", "error", err)
 		http.Error(w, "Path invalido", http.StatusBadRequest)
@@ -150,11 +149,11 @@ func FinalizarProceso(w http.ResponseWriter, r *http.Request) {
 
 // Va a tener que recibir un PID y un PC (en ese orden) y responder con la siguiente instruccion
 const (
-	PC = 0
+	PC = 1
 )
 
 func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para inicar proceso recibida desde Kernel")
+	clientUtils.Logger.Info("[Memoria] Petición para siguiente instuccion recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 	pid, err := strconv.Atoi(pedido.Valores[PID])
@@ -170,9 +169,6 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	globalsMemoria.MutexProcesos.Lock()
-	defer globalsMemoria.MutexProcesos.Unlock()
-
 	proceso := buscarProceso(pid)
 
 	if pc < 0 || pc >= len(proceso.Instrucciones) {
@@ -180,6 +176,7 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "PC fuera de rango", http.StatusBadRequest)
 		return
 	}
+
 	instruccion := proceso.Instrucciones[pc]
 
 	clientUtils.Logger.Info("Instrucción siguiente:", "pid", pid, "pc", pc, "instrucción", instruccion)
