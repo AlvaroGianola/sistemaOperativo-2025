@@ -153,17 +153,21 @@ func (cl *CpuList) BuscarPorID(id string) (*Cpu, bool) {
 	return nil, false
 }
 
-func (cl *CpuList) SacarPorID(id string) {
+func (cl *CpuList) SacarPorID(id string) *Cpu {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 
 	for i, cpu := range cl.cpus {
 		if cpu.Identificador == id {
+			// Eliminar del slice y retornar el puntero a la CPU removida
 			cl.cpus = append(cl.cpus[:i], cl.cpus[i+1:]...)
-			break
+			return &cpu
 		}
 	}
+	// Si no se encuentra la CPU, retornar nil
+	return nil
 }
+
 func (cl *CpuList) BuscarPorPIDEnEjecucion(pid uint) (*Cpu, bool) {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
@@ -743,7 +747,9 @@ func (pcp *PlanificadorCortoPlazo) ejecutar(proceso *PCB) {
 	CPUlibre := cpusLibres.SacarProxima()
 	// Log de cambio de estado READY -> EXEC
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado READY al estado EXEC", proceso.PID))
+	clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Ejecutando en CPU: %s", proceso.PID, CPUlibre.Identificador))
 	// Actualizamos el tiempo de entrada al estado EXEC
+
 	proceso.timeInCurrentState = time.Now()
 	proceso.ME.execCount++
 	pcp.execState.Agregar(proceso)
@@ -874,9 +880,12 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: EXIT", proceso.PID))
+		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Estaba ejecutando en %s", proceso.PID, cpu.Identificador))
 		Plp.FinalizarProceso(proceso)
-		cpusOcupadas.SacarPorID(cpu.Identificador)
-		cpusLibres.Agregar(*cpu)
+
+		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Estoy por liberar CPU: %s", proceso.PID, cpu.Identificador))
+		cpusLibres.Agregar(*cpusOcupadas.SacarPorID(cpu.Identificador))
+
 		<-sem_cpusLibres
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DUMP_MEMORY" {
@@ -891,6 +900,7 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		go manejarIo(respuesta, proceso)
 		cpusOcupadas.SacarPorID(cpu.Identificador)
 		cpusLibres.Agregar(*cpu)
+		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Liberada CPU: %s", proceso.PID, cpu.Identificador))
 		<-sem_cpusLibres
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DESALOJO" {
