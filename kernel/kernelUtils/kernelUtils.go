@@ -28,6 +28,7 @@ var sem_cpusLibres = make(chan int)
 var proximoPID uint = 0
 var muProximoPID sync.Mutex
 var Plp PlanificadorLargoPlazo
+var Pmp PlanificadorMedianoPlazo
 
 var iniciarLargoPlazo = make(chan struct{})
 
@@ -74,6 +75,17 @@ func InciarPlp() PlanificadorLargoPlazo {
 	}
 
 	return PlanificadorLargoPlazo{newAlgorithmEstrategy: estrategia, pcp: InciarPcp()}
+}
+
+func IniciarPmp() PlanificadorMedianoPlazo {
+	var estrategia SuspReadyAlgorithmEstrategy
+	algoritmo := globalskernel.KernelConfig.ReadyIngressAlgorithm
+	if algoritmo == "FIFO" {
+		estrategia = SuspFIFOEstrategy{}
+	} else if algoritmo == "PMCP" {
+		estrategia = SuspPMCPEstrategy{}
+	}
+	return PlanificadorMedianoPlazo{suspReadyEstrategy: estrategia}
 }
 
 // Estructura para representar CPUs e IOs conectados al Kernel
@@ -457,7 +469,7 @@ func (p *PCBList) BuscarProcesoConMayorEstimacion() (*PCB, bool) {
 		if p.elementos[i].estaSiendoDesalojado.Load() {
 			continue
 		}
-		if p.elementos[i].estimacion > maxProceso.estimacion {
+		if p.elementos[i].estimacion-p.elementos[i].timeInState() > maxProceso.estimacion-maxProceso.timeInState() {
 			maxProceso = p.elementos[i]
 		}
 	}
@@ -488,15 +500,17 @@ func (f FIFOEstrategy) manejarIngresoDeProceso(nuevoProceso *PCB, plp *Planifica
 }
 
 func (f FIFOEstrategy) manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo) {
-	// chequea una copia del mismo, si puede irse lo desencola
-	if plp.newState.Vacia() {
-		return
-	}
-	proximoProceso := plp.newState.VizualizarProximo()
-	if plp.EnviarPedidoMemoria(proximoProceso) {
-		plp.EnviarProcesoAReady(proximoProceso)
-		plp.newState.SacarProximoProceso()
-		f.manejarLiberacionDeProceso(plp)
+	if Pmp.suspReadyState.Vacia() {
+		// chequea una copia del mismo, si puede irse lo desencola
+		if plp.newState.Vacia() {
+			return
+		}
+		proximoProceso := plp.newState.VizualizarProximo()
+		if plp.EnviarPedidoMemoria(proximoProceso) {
+			plp.EnviarProcesoAReady(proximoProceso)
+			plp.newState.SacarProximoProceso()
+			f.manejarLiberacionDeProceso(plp)
+		}
 	}
 }
 
@@ -504,25 +518,42 @@ type PMCPEstrategy struct {
 }
 
 func (p PMCPEstrategy) manejarIngresoDeProceso(nuevoProceso *PCB, plp *PlanificadorLargoPlazo) {
-	plp.intentarInicializar(nuevoProceso)
+	plp.newState.OrdenarPorPMC()
+	procesoMasChico := plp.newState.VizualizarProximo()
+	if Pmp.suspReadyState.Vacia() && nuevoProceso.ProcessSize < procesoMasChico.ProcessSize {
+		plp.intentarInicializar(nuevoProceso)
+	} else {
+		plp.newState.Agregar(nuevoProceso)
+	}
 }
 
 func (p PMCPEstrategy) manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo) {
-	plp.newState.OrdenarPorPMC()
-	if plp.newState.Vacia() {
-		return
-	}
-	proximoProceso := plp.newState.VizualizarProximo()
-	if plp.EnviarPedidoMemoria(proximoProceso) {
-		plp.EnviarProcesoAReady(proximoProceso)
-		plp.newState.SacarProximoProceso()
-		p.manejarLiberacionDeProceso(plp)
+	if Pmp.suspReadyState.Vacia() {
+		plp.newState.OrdenarPorPMC()
+		if plp.newState.Vacia() {
+			return
+		}
+		proximoProceso := plp.newState.VizualizarProximo()
+		if plp.EnviarPedidoMemoria(proximoProceso) {
+			plp.EnviarProcesoAReady(proximoProceso)
+			plp.newState.SacarProximoProceso()
+			p.manejarLiberacionDeProceso(plp)
+		}
+	} else {
+		Pmp.suspReadyState.OrdenarPorPMC()
+		proximoProceso := Pmp.suspReadyState.VizualizarProximo()
+		if Pmp.EnviarDesSuspensionPedidoMemoria(proximoProceso) {
+			Pmp.EnviarProcesoAReady(proximoProceso)
+			Pmp.suspReadyState.SacarProximoProceso()
+			p.manejarLiberacionDeProceso(plp)
+		}
 	}
 }
 
 type PlanificadorLargoPlazo struct {
 	newState              PCBList
 	exitState             PCBList
+	blockedState          PCBList
 	newAlgorithmEstrategy NewAlgorithmEstrategy
 	pcp                   PlanificadorCortoPlazo
 }
@@ -530,11 +561,34 @@ type PlanificadorLargoPlazo struct {
 func (plp *PlanificadorLargoPlazo) RecibirNuevoProceso(nuevoProceso *PCB) {
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Se crea el proceso - Estado: NEW", nuevoProceso.PID))
 	nuevoProceso.timeInCurrentState = time.Now()
-	if plp.newState.Vacia() {
+	if plp.newState.Vacia() && Pmp.suspReadyState.Vacia() {
 		plp.intentarInicializar(nuevoProceso)
 	} else {
 		plp.newAlgorithmEstrategy.manejarIngresoDeProceso(nuevoProceso, plp)
 	}
+}
+
+func (plp *PlanificadorLargoPlazo) blockedTimer(proceso *PCB) {
+	timer := time.NewTimer(time.Duration(globalskernel.KernelConfig.SuspensionTime) * time.Millisecond)
+	<-timer.C
+	_, ok := plp.blockedState.BuscarYSacarPorPID(proceso.PID)
+	if ok {
+		proceso.MT.blockedTime += proceso.timeInState()
+		Pmp.RecibirProcesoSuspblocked(proceso)
+		plp.EnviarSuspensionMemoria(proceso)
+		if Pmp.suspReadyState.Vacia() {
+			plp.newAlgorithmEstrategy.manejarLiberacionDeProceso(plp)
+		} else {
+			Pmp.suspReadyEstrategy.manejarLiberacionDeProceso(&Pmp)
+		}
+	}
+}
+
+func (plp *PlanificadorLargoPlazo) RecibirProcesoBlocked(proceso *PCB) {
+	proceso.timeInCurrentState = time.Now()
+	proceso.ME.blockedCount++
+	plp.blockedState.Agregar(proceso)
+	go plp.blockedTimer(proceso)
 }
 
 func (plp *PlanificadorLargoPlazo) intentarInicializar(nuevoProceso *PCB) {
@@ -572,10 +626,10 @@ func (plp *PlanificadorLargoPlazo) FinalizarProceso(proceso *PCB) {
 		plp.exitState.Agregar(proceso)
 		plp.loggearMetricas(proceso)
 
-		// TODO: aca iria mediano plazo chequear los susps ready (Checkpoint 3)
-		// si no chequea new
-		if pmp.suspReadyState.Vacia() {
+		if Pmp.suspReadyState.Vacia() {
 			plp.newAlgorithmEstrategy.manejarLiberacionDeProceso(plp)
+		} else {
+			Pmp.suspReadyEstrategy.manejarLiberacionDeProceso(&Pmp)
 		}
 
 	} else {
@@ -626,7 +680,11 @@ func (plp *PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso *PCB) bool {
 		return true
 	}
 
-	clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó el proceso PID %d o hubo un error en la conexión", nuevoProceso.PID))
+	if resp == nil {
+		clientUtils.Logger.Warn(fmt.Sprintf("Error de conexión al tratar de inicializar el proceso PID %d (respuesta nula)", nuevoProceso.PID))
+	} else {
+		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la iniciacion del proceso PID %d por espacio insuficiente. Status: %s", nuevoProceso.PID, resp.Status))
+	}
 	return false
 }
 
@@ -656,6 +714,30 @@ func (plp *PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado *
 		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la finalización del proceso PID %d. Status: %s", procesoTernminado.PID, resp.Status))
 	}
 	return false
+}
+
+func (plp *PlanificadorLargoPlazo) EnviarSuspensionMemoria(proceso *PCB) {
+	valores := []string{strconv.Itoa(int(proceso.PID))}
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	// Fijamos la direccion del endpoint de memoria
+	ip := globalskernel.KernelConfig.IpMemory
+	puerto := globalskernel.KernelConfig.PortMemory
+	endpoint := "suspenderProceso"
+
+	//Usamos EnviarPaqueteConRespuesta que devuelve la respuesta del servidor
+	resp := clientUtils.EnviarPaqueteConRespuesta(ip, puerto, endpoint, paquete)
+	if resp != nil && resp.StatusCode == http.StatusOK {
+		clientUtils.Logger.Info(fmt.Sprintf("Memoria envió Proceso PID %d a swap correctamente", proceso.PID))
+
+	}
+
+	//Si no responde con 200 OK, lo logueamos como advertencia
+	if resp == nil {
+		clientUtils.Logger.Warn(fmt.Sprintf("Error de conexión al realizar swap del proceso PID %d (respuesta nula)", proceso.PID))
+	} else {
+		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la solicitud de swap del proceso PID %d. Status: %s", proceso.PID, resp.Status))
+	}
 }
 
 // ------------ PLANIFICADOR CORTO PLAZO -----------------------------------------
@@ -710,7 +792,7 @@ func (s SRTScheduler) intentarDesalojo(pcp *PlanificadorCortoPlazo, procesoNuevo
 		clientUtils.Logger.Error("Error al buscar proceso con mayor estimación")
 		return
 	}
-	if procesoNuevo.estimacion < proceso.estimacion {
+	if procesoNuevo.estimacion < (proceso.estimacion - proceso.timeInState()) {
 		//buscar la cpu que tenga ese PID
 		cpu, ok := cpusOcupadas.BuscarPorPIDEnEjecucion(proceso.PID)
 		if !ok {
@@ -774,23 +856,123 @@ func (pcp *PlanificadorCortoPlazo) EnviarProcesoABlocked(proceso *PCB) {
 	// Log del cambio de estado EXEC → BLOCKED
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado EXEC al estado BLOCKED", proceso.PID))
 
-	pmp.RecibirProceso(proceso)
+	Plp.RecibirProcesoBlocked(proceso)
 }
 
 // ------------ PLANIFICADOR MEDIANO PLAZO -----------------------------------------
 
-var pmp PlanificadorMedianoPlazo
-
-type PlanificadorMedianoPlazo struct {
-	blockedState PCBList
-	//suspBlockedState PCBList
-	suspReadyState PCBList
+type SuspReadyAlgorithmEstrategy interface {
+	manejarIngresoDeProceso(proceso *PCB, pmp *PlanificadorMedianoPlazo)
+	manejarLiberacionDeProceso(pmp *PlanificadorMedianoPlazo)
 }
 
-func (pmp *PlanificadorMedianoPlazo) RecibirProceso(proceso *PCB) {
+type SuspFIFOEstrategy struct {
+}
+
+func (f SuspFIFOEstrategy) manejarIngresoDeProceso(proceso *PCB, pmp *PlanificadorMedianoPlazo) {
+	pmp.suspReadyState.Agregar(proceso)
+}
+
+func (f SuspFIFOEstrategy) manejarLiberacionDeProceso(pmp *PlanificadorMedianoPlazo) {
+
+	proximoProceso := Pmp.suspReadyState.VizualizarProximo()
+	if Pmp.EnviarDesSuspensionPedidoMemoria(proximoProceso) {
+		Pmp.EnviarProcesoAReady(proximoProceso)
+		Pmp.suspReadyState.SacarProximoProceso()
+		f.manejarLiberacionDeProceso(pmp)
+	}
+}
+
+type SuspPMCPEstrategy struct {
+}
+
+func (p SuspPMCPEstrategy) manejarIngresoDeProceso(proceso *PCB, pmp *PlanificadorMedianoPlazo) {
+	pmp.suspReadyState.OrdenarPorPMC()
+	procesoMasChico := pmp.suspReadyState.VizualizarProximo()
+	if proceso.ProcessSize < procesoMasChico.ProcessSize {
+		pmp.intentarInicializar(proceso)
+	} else {
+		pmp.suspReadyState.Agregar(proceso)
+	}
+}
+
+func (p SuspPMCPEstrategy) manejarLiberacionDeProceso(pmp *PlanificadorMedianoPlazo) {
+	Pmp.suspReadyState.OrdenarPorPMC()
+	proximoProceso := Pmp.suspReadyState.VizualizarProximo()
+	if Pmp.EnviarDesSuspensionPedidoMemoria(proximoProceso) {
+		Pmp.EnviarProcesoAReady(proximoProceso)
+		Pmp.suspReadyState.SacarProximoProceso()
+		p.manejarLiberacionDeProceso(pmp)
+	}
+}
+
+type PlanificadorMedianoPlazo struct {
+	suspBlockedState   PCBList
+	suspReadyState     PCBList
+	suspReadyEstrategy SuspReadyAlgorithmEstrategy
+}
+
+func (pmp *PlanificadorMedianoPlazo) RecibirProcesoSuspblocked(proceso *PCB) {
+	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado BLOCKED al estado SUSP BLOCKED", proceso.PID))
 	proceso.timeInCurrentState = time.Now()
-	proceso.ME.blockedCount++
-	pmp.blockedState.Agregar(proceso)
+	proceso.ME.suspBlockedCount++
+	pmp.suspBlockedState.Agregar(proceso)
+}
+
+func (pmp *PlanificadorMedianoPlazo) EnviarProcesoASuspReady(proceso *PCB) {
+	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado SUSP BLOCKED al estado SUSP READY", proceso.PID))
+	proceso.timeInCurrentState = time.Now()
+	proceso.ME.suspReadyCount++
+
+	if Pmp.suspReadyState.Vacia() {
+		pmp.intentarInicializar(proceso)
+	} else {
+		pmp.suspReadyEstrategy.manejarIngresoDeProceso(proceso, pmp)
+	}
+}
+
+func (pmp *PlanificadorMedianoPlazo) intentarInicializar(proceso *PCB) {
+	if pmp.EnviarDesSuspensionPedidoMemoria(proceso) {
+		pmp.EnviarProcesoAReady(proceso)
+	} else {
+		pmp.suspReadyState.Agregar(proceso)
+	}
+}
+
+func (pmp *PlanificadorMedianoPlazo) EnviarProcesoAReady(proceso *PCB) {
+	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado SUSP READY al estado READY", proceso.PID))
+	proceso.MT.suspReadyTime += proceso.timeInState()
+	proceso.timeInCurrentState = time.Now()
+	Plp.pcp.RecibirProceso(proceso)
+}
+
+func (pmp *PlanificadorMedianoPlazo) EnviarDesSuspensionPedidoMemoria(proceso *PCB) bool {
+	// Creamos el contenido del paquete con lo que la Memoria necesita:
+	// PID, Ruta al pseudocódigo, y Tamaño del proceso
+	valores := []string{
+		strconv.Itoa(int(proceso.PID)),
+		proceso.FilePath,
+		strconv.Itoa(int(proceso.ProcessSize)),
+	}
+
+	// Construimos el paquete
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	// Obtenemos IP y puerto de Memoria desde la config global del Kernel
+	ip := globalskernel.KernelConfig.IpMemory
+	puerto := globalskernel.KernelConfig.PortMemory
+	endpoint := "desSuspenderProceso"
+
+	resp := clientUtils.EnviarPaqueteConRespuesta(ip, puerto, endpoint, paquete)
+
+	// Validamos la respuesta (por ahora asumimos éxito si hay respuesta 200 OK)
+	if resp != nil && resp.StatusCode == http.StatusOK {
+		clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d des-suspendido correctamente", proceso.PID))
+		return true
+	}
+
+	clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó el pedido de des-suspension del proceso PID %d", proceso.PID))
+	return false
 }
 
 //----------------------- Funciones para manejar los endpoints -------------------------
@@ -891,15 +1073,15 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DUMP_MEMORY" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: DUMP_MEMORY", proceso.PID))
 		go ManejarMemoryDump(proceso)
-		cpusOcupadas.SacarPorID(cpu.Identificador)
-		cpusLibres.Agregar(*cpu)
+		cpusLibres.Agregar(*cpusOcupadas.SacarPorID(cpu.Identificador))
+
 		<-sem_cpusLibres
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "IO" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: IO", proceso.PID))
 		go manejarIo(respuesta, proceso)
-		cpusOcupadas.SacarPorID(cpu.Identificador)
-		cpusLibres.Agregar(*cpu)
+		cpusLibres.Agregar(*cpusOcupadas.SacarPorID(cpu.Identificador))
+
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Liberada CPU: %s", proceso.PID, cpu.Identificador))
 		<-sem_cpusLibres
 
@@ -945,7 +1127,7 @@ func EnviarMemoryDump(PID uint) bool {
 func ManejarMemoryDump(proceso *PCB) {
 	Plp.pcp.EnviarProcesoABlocked(proceso)
 	respuesta := EnviarMemoryDump(proceso.PID)
-	proceso, ok := pmp.blockedState.BuscarYSacarPorPID(proceso.PID)
+	proceso, ok := Plp.blockedState.BuscarYSacarPorPID(proceso.PID)
 	proceso.MT.blockedTime += proceso.timeInState()
 	if !ok {
 		clientUtils.Logger.Error("Error al encontrar el proceso en blocked")
@@ -1030,19 +1212,27 @@ func ResultadoIos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proceso, ok := pmp.blockedState.BuscarYSacarPorPID(uint(ioPid))
-	proceso.MT.blockedTime += proceso.timeInState()
-	if !ok {
-		clientUtils.Logger.Error("Error al encontrar el proceso en blocked")
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
+	var estaEnBlocked bool
+	proceso, estaEnSuspBlocked := Pmp.suspBlockedState.BuscarYSacarPorPID(uint(ioPid))
+	if !estaEnSuspBlocked {
+		proceso, estaEnBlocked = Plp.blockedState.BuscarYSacarPorPID(uint(ioPid))
+		proceso.MT.blockedTime += proceso.timeInState()
+		if !estaEnBlocked {
+			clientUtils.Logger.Error("Error al encontrar el proceso en blocked")
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
 	}
 
-	//TODO:3er checkpoint enviar a susp ready en vez de ready
 	if paquete.Valores[MOTIVO_DEVOLUCION_IO] == "Fin" {
-		manejarPendientesIo(nombre)
-		clientUtils.Logger.Info(fmt.Sprintf("## (%d) finalizó IO y pasa a READY", proceso.PID))
-		Plp.pcp.RecibirProceso(proceso)
+		go manejarPendientesIo(nombre)
+		if estaEnBlocked {
+			clientUtils.Logger.Info(fmt.Sprintf("## (%d) finalizó IO y pasa a READY", proceso.PID))
+			Plp.pcp.RecibirProceso(proceso)
+		} else if estaEnSuspBlocked {
+			proceso.MT.suspBlockedTime += proceso.timeInState()
+			Pmp.EnviarProcesoASuspReady(proceso)
+		}
 	} else if paquete.Valores[MOTIVO_DEVOLUCION_IO] == "Desconexion" {
 		manejarDesconexionIo(nombre)
 		Plp.FinalizarProceso(proceso)
