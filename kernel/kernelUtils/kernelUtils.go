@@ -21,8 +21,8 @@ import (
 
 var cpusLibres CpuList
 var cpusOcupadas CpuList
-var iosRegistradas = IoMap{ios: make(map[string]*Io)}
 var sem_cpusLibres = make(chan int)
+var iosRegistradas = IoMap{ios: make(map[string]*GrupoIo)}
 
 // PID para nuevos procesos
 var proximoPID uint = 0
@@ -200,14 +200,19 @@ func (cl *CpuList) Vacia() bool {
 
 // Struct y funciones para IO
 
-type Io struct {
+type GrupoIo struct {
 	Nombre            string
-	Ip                string
-	Puerto            int
-	ocupada           bool
-	conectada         bool
+	Ios               []*Io
 	procesosEsperando []PedidoIo
 	mu                sync.Mutex
+}
+
+type Io struct {
+	Ip             string
+	Puerto         int
+	ocupada        bool
+	PIDEnEjecucion uint
+	mu             sync.Mutex
 }
 
 type PedidoIo struct {
@@ -215,28 +220,83 @@ type PedidoIo struct {
 	time int
 }
 
-func (io *Io) TieneProcesosEsperando() bool {
-	io.mu.Lock()
-	defer io.mu.Unlock()
-	return len(io.procesosEsperando) > 0
+func (gi *GrupoIo) TieneProcesosEsperando() bool {
+	gi.mu.Lock()
+	defer gi.mu.Unlock()
+	return len(gi.procesosEsperando) > 0
 }
 
-func (io *Io) SacarProximoProceso() (PedidoIo, bool) {
-	io.mu.Lock()
-	defer io.mu.Unlock()
-	if len(io.procesosEsperando) == 0 {
-		var vacio PedidoIo
-		return vacio, false
+func (gi *GrupoIo) ExistenInstancias() bool {
+	gi.mu.Lock()
+	defer gi.mu.Unlock()
+	return len(gi.Ios) > 0
+}
+
+func (gi *GrupoIo) SacarProximoPedido() (PedidoIo, bool) {
+	gi.mu.Lock()
+	defer gi.mu.Unlock()
+	if len(gi.procesosEsperando) == 0 {
+		return PedidoIo{}, false
 	}
-	prox := io.procesosEsperando[0]
-	io.procesosEsperando = io.procesosEsperando[1:]
+	prox := gi.procesosEsperando[0]
+	gi.procesosEsperando = gi.procesosEsperando[1:]
 	return prox, true
 }
 
-func (io *Io) AgregarPedido(pedido PedidoIo) {
-	io.mu.Lock()
-	defer io.mu.Unlock()
-	io.procesosEsperando = append(io.procesosEsperando, pedido)
+func (gi *GrupoIo) AgregarPedido(p PedidoIo) {
+	gi.mu.Lock()
+	defer gi.mu.Unlock()
+	gi.procesosEsperando = append(gi.procesosEsperando, p)
+}
+
+func (gi *GrupoIo) ObtenerIoLibre() (*Io, bool) {
+	gi.mu.Lock()
+	defer gi.mu.Unlock()
+	for _, io := range gi.Ios {
+		if !io.EstaOcupada() {
+			io.MarcarOcupada()
+			return io, true
+		}
+	}
+	return nil, false
+}
+
+func (gi *GrupoIo) AgregarIo(io *Io) {
+	gi.mu.Lock()
+	defer gi.mu.Unlock()
+
+	// Verifica que no esté ya incluida
+	for _, existente := range gi.Ios {
+		if existente.Ip == io.Ip && existente.Puerto == io.Puerto {
+			return // Ya existe, no la agregamos
+		}
+	}
+	gi.Ios = append(gi.Ios, io)
+}
+
+func (gi *GrupoIo) EliminarIo(io *Io) {
+	gi.mu.Lock()
+	defer gi.mu.Unlock()
+
+	for i, existente := range gi.Ios {
+		if existente.Ip == io.Ip && existente.Puerto == io.Puerto {
+			// Eliminarla de la lista
+			gi.Ios = append(gi.Ios[:i], gi.Ios[i+1:]...)
+			break
+		}
+	}
+}
+
+func (gi *GrupoIo) BuscarIoPorPID(pid uint) (*Io, bool) {
+	gi.mu.Lock()
+	defer gi.mu.Unlock()
+
+	for _, io := range gi.Ios {
+		if io.ObtenerPIDEnEjecucion() == pid {
+			return io, true
+		}
+	}
+	return nil, false
 }
 
 func (io *Io) MarcarOcupada() {
@@ -257,28 +317,22 @@ func (io *Io) EstaOcupada() bool {
 	return io.ocupada
 }
 
-func (io *Io) MarcarDesconectada() {
+func (io *Io) SetPIDEnEjecucion(pid uint) {
 	io.mu.Lock()
 	defer io.mu.Unlock()
-	io.conectada = false
+	io.PIDEnEjecucion = pid
 }
 
-func (io *Io) MarcarConectada() {
+func (io *Io) ObtenerPIDEnEjecucion() uint {
 	io.mu.Lock()
 	defer io.mu.Unlock()
-	io.conectada = true
-}
-
-func (io *Io) EstaConectada() bool {
-	io.mu.Lock()
-	defer io.mu.Unlock()
-	return io.conectada
+	return io.PIDEnEjecucion
 }
 
 func (io *Io) enviarProceso(PID uint, time int) {
 	valores := []string{strconv.Itoa(int(PID)), strconv.Itoa(time)}
 	paquete := clientUtils.Paquete{Valores: valores}
-
+	io.SetPIDEnEjecucion(PID)
 	//Mandamos el PID y tiempo al endpoint de IO
 	endpoint := "recibirPeticion"
 
@@ -286,32 +340,36 @@ func (io *Io) enviarProceso(PID uint, time int) {
 }
 
 type IoMap struct {
-	ios map[string]*Io
+	ios map[string]*GrupoIo
 	mu  sync.Mutex
 }
 
 // Obtener IO por nombre (retorna *Io para no copiar Mutex)
-func (im *IoMap) Obtener(nombre string) (*Io, bool) {
+func (im *IoMap) ObtenerGrupo(nombre string) (*GrupoIo, bool) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 	io, ok := im.ios[nombre]
 	return io, ok
 }
 
-// Agregar o actualizar IO (usa puntero)
-func (im *IoMap) Agregar(io *Io) {
+func (im *IoMap) AgregarGrupoIo(grupo *GrupoIo) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
-	im.ios[io.Nombre] = io
+
+	if _, existe := im.ios[grupo.Nombre]; !existe {
+		im.ios[grupo.Nombre] = grupo
+	}
 }
 
-// Marcar desconectada (ya es un puntero, se modifica directamente)
-func (im *IoMap) MarcarDesconectada(nombre string) {
+func (im *IoMap) BuscarIoPorGrupoYPID(nombre string, pid uint) (*Io, bool) {
 	im.mu.Lock()
-	defer im.mu.Unlock()
-	if io, ok := im.ios[nombre]; ok {
-		io.conectada = false
+	grupo, ok := im.ios[nombre]
+	im.mu.Unlock()
+	if !ok {
+		return nil, false
 	}
+
+	return grupo.BuscarIoPorPID(pid)
 }
 
 //-------------- Estructuras generales para el manejo de estados -------------------
@@ -1147,19 +1205,18 @@ func manejarIo(respuesta serverUtils.Paquete, proceso *PCB) {
 		clientUtils.Logger.Error("Error al parsear el tiempo de interrupcion")
 		return
 	}
-	io, ok := iosRegistradas.Obtener(nombre)
+	grupoIo, ok := iosRegistradas.ObtenerGrupo(nombre)
 	if ok {
 		clientUtils.Logger.Info(fmt.Sprintf(`## (%d) - Bloqueado por IO: %s`, proceso.PID, nombre))
 		Plp.pcp.EnviarProcesoABlocked(proceso)
-		if io.EstaOcupada() || !io.EstaConectada() {
-			io.AgregarPedido(PedidoIo{PID: proceso.PID, time: time})
+		ioDesocupada, ok := grupoIo.ObtenerIoLibre()
+		if !ok {
+			grupoIo.AgregarPedido(PedidoIo{PID: proceso.PID, time: time})
 		} else {
-			io.MarcarOcupada()
-			io.enviarProceso(proceso.PID, time)
+			ioDesocupada.enviarProceso(proceso.PID, time)
 		}
-
 	} else {
-		clientUtils.Logger.Error(fmt.Sprintf("Dispositivo %s no encontrado", nombre))
+		clientUtils.Logger.Error(fmt.Sprintf("No existe ninguna instancia del dispositivo %s", nombre))
 		Plp.FinalizarProceso(proceso)
 	}
 }
@@ -1176,23 +1233,22 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
+
+	nuevaIo := &Io{
+		Ip:      paquete.Valores[1],
+		Puerto:  puerto,
+		ocupada: false,
+	}
+
 	//manejo si se trata de una reconexion o una conexion nueva
-	io, ok := iosRegistradas.Obtener(nombre)
+	grupoIo, ok := iosRegistradas.ObtenerGrupo(nombre)
 	if ok {
-		io.MarcarConectada()
-		io.Puerto = puerto // actualizo el puerto por las dudas nose si en esa nueva conexion el puerto viejo este ocupado por otra io
+		grupoIo.AgregarIo(nuevaIo)
 		manejarPendientesIo(nombre)
 	} else {
-		nuevaIo := &Io{
-			Nombre:    paquete.Valores[0],
-			Ip:        paquete.Valores[1],
-			Puerto:    puerto,
-			ocupada:   false,
-			conectada: true,
-		}
-
-		iosRegistradas.Agregar(nuevaIo)
-		clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %+v", &nuevaIo))
+		nuevoGrupo := &GrupoIo{Nombre: nombre}
+		iosRegistradas.AgregarGrupoIo(nuevoGrupo)
+		clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %s", nombre))
 	}
 }
 
@@ -1216,7 +1272,6 @@ func ResultadoIos(w http.ResponseWriter, r *http.Request) {
 	proceso, estaEnSuspBlocked := Pmp.suspBlockedState.BuscarYSacarPorPID(uint(ioPid))
 	if !estaEnSuspBlocked {
 		proceso, estaEnBlocked = Plp.blockedState.BuscarYSacarPorPID(uint(ioPid))
-		proceso.MT.blockedTime += proceso.timeInState()
 		if !estaEnBlocked {
 			clientUtils.Logger.Error("Error al encontrar el proceso en blocked")
 			http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -1224,46 +1279,78 @@ func ResultadoIos(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	ioOcupada, ok := iosRegistradas.BuscarIoPorGrupoYPID(nombre, uint(ioPid))
+	if !ok {
+		clientUtils.Logger.Error("Error al buscar la IO por su PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
 	if paquete.Valores[MOTIVO_DEVOLUCION_IO] == "Fin" {
+		ioOcupada.MarcarLibre()
 		go manejarPendientesIo(nombre)
 		if estaEnBlocked {
 			clientUtils.Logger.Info(fmt.Sprintf("## (%d) finalizó IO y pasa a READY", proceso.PID))
+			proceso.MT.blockedTime += proceso.timeInState()
 			Plp.pcp.RecibirProceso(proceso)
 		} else if estaEnSuspBlocked {
 			proceso.MT.suspBlockedTime += proceso.timeInState()
 			Pmp.EnviarProcesoASuspReady(proceso)
 		}
 	} else if paquete.Valores[MOTIVO_DEVOLUCION_IO] == "Desconexion" {
-		manejarDesconexionIo(nombre)
+		manejarDesconexionIo(nombre, ioOcupada)
 		Plp.FinalizarProceso(proceso)
 	}
 }
 
 func manejarPendientesIo(nombre string) {
-	io, ok := iosRegistradas.Obtener(nombre)
+	grupoIo, ok := iosRegistradas.ObtenerGrupo(nombre)
 	if !ok {
-		clientUtils.Logger.Error("Error al buscar IO por nombre")
+		clientUtils.Logger.Error("Error al buscar una instancia IO por nombre")
 		return
 	}
-	if io.TieneProcesosEsperando() {
-		pedido, ok := io.SacarProximoProceso()
+	if grupoIo.TieneProcesosEsperando() {
+		io, _ := grupoIo.ObtenerIoLibre()
+		pedido, ok := grupoIo.SacarProximoPedido()
 		if !ok {
 			clientUtils.Logger.Error("Error al obtener el proximo proceso de io")
 			return
 		}
 		io.enviarProceso(pedido.PID, pedido.time)
-	} else {
-		io.MarcarLibre()
 	}
 }
 
-func manejarDesconexionIo(nombre string) {
-	io, ok := iosRegistradas.Obtener(nombre)
+func manejarDesconexionIo(nombre string, ioDesconectada *Io) {
+	grupoIo, ok := iosRegistradas.ObtenerGrupo(nombre)
 	if !ok {
-		clientUtils.Logger.Error("Error al buscar IO por nombre")
+		clientUtils.Logger.Error("Error al buscar el grupo IO por nombre")
 		return
 	}
-	io.MarcarDesconectada()
+	grupoIo.EliminarIo(ioDesconectada)
+	if !grupoIo.ExistenInstancias() {
+		finalizarTodosLosProcesosPendientes(grupoIo)
+	}
+}
+
+func finalizarTodosLosProcesosPendientes(grupoIo *GrupoIo) {
+	for grupoIo.TieneProcesosEsperando() {
+		PedidoIo, ok := grupoIo.SacarProximoPedido()
+		if !ok {
+			break
+		}
+		var estaEnBlocked bool
+		proceso, estaEnSuspBlocked := Pmp.suspBlockedState.BuscarYSacarPorPID(PedidoIo.PID)
+		if estaEnSuspBlocked {
+			proceso.MT.suspBlockedTime += proceso.timeInState()
+		} else {
+			proceso, estaEnBlocked = Plp.blockedState.BuscarYSacarPorPID(PedidoIo.PID)
+			if !estaEnBlocked {
+				clientUtils.Logger.Error("Error al encontrar el proceso en blocked")
+				return
+			}
+			proceso.MT.blockedTime += proceso.timeInState()
+		}
+		Plp.FinalizarProceso(proceso)
+	}
 }
 
 func IniciarKernel(filePath string, processSize uint) {
