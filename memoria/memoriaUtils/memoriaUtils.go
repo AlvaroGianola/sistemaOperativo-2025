@@ -196,6 +196,7 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 
 	clientUtils.Logger.Info("Instrucción siguiente:", "pid", pid, "pc", pc, "instrucción", instruccion)
 
+	proceso.Metricas.InstruccionesSolicitadas++
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(instruccion))
 }
@@ -293,8 +294,8 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-
-	if buscarProceso(pid) == nil {
+	proceso := buscarProceso(pid)
+	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
@@ -335,8 +336,9 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Simulamos la lectura de la página, en realidad deberíamos leer desde el marco
-
+	proceso.Metricas.LecturasDeMemoria++
 	clientUtils.Logger.Info("Página leída", "pid", pid, "marco", marco, "contenido", contenido)
+
 	w.Write([]byte(contenido))
 	w.WriteHeader(http.StatusOK)
 }
@@ -352,7 +354,8 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	if buscarProceso(pid) == nil {
+	proceso := buscarProceso(pid)
+	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
@@ -391,7 +394,7 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 
 		globalsMemoria.MemoriaUsuario[marco+i] = byte(contenido)
 	}
-
+	proceso.Metricas.EscriturasDeMemoria++
 	clientUtils.Logger.Info("Página escrita", "pid", pid, "marco", marco, "tamaño", tamanioEnviado)
 	w.WriteHeader(http.StatusOK)
 
@@ -408,8 +411,8 @@ func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-
-	if buscarProceso(pid) == nil {
+	proceso := buscarProceso(pid)
+	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
@@ -424,7 +427,7 @@ func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 
 	contenido := globalsMemoria.MemoriaUsuario[direccionFisica]
 	// Simulamos la escritura de la dirección física
-
+	proceso.Metricas.LecturasDeMemoria++
 	w.Write([]byte{contenido})
 	w.WriteHeader(http.StatusOK)
 }
@@ -440,8 +443,8 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-
-	if buscarProceso(pid) == nil {
+	proceso := buscarProceso(pid)
+	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
@@ -460,6 +463,7 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	proceso.Metricas.EscriturasDeMemoria++
 	globalsMemoria.MemoriaUsuario[direccionFisica] = contenido[0]
 
 	w.WriteHeader(http.StatusOK)
