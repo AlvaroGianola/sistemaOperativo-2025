@@ -33,14 +33,33 @@ func IniciarConfiguracion(filePath string) *globalsMemoria.Config {
 		panic("Error al decodificar config: " + err.Error())
 	}
 
+	clientUtils.Logger.Info("[Memoria] Configuración de memoria cargada correctamente", "config", config)
+
+	// crea el archivo swapfile.bin si no existe
+	if _, err := os.Stat(config.SwapfilePath); os.IsNotExist(err) {
+		file, err := os.Create(config.SwapfilePath)
+		if err != nil {
+			panic("Error al crear swapfile: " + err.Error())
+		}
+		defer file.Close()
+	}
+	// crea el directorio de dumps si no existe
+	if _, err := os.Stat(config.DumpPath); os.IsNotExist(err) {
+		err := os.MkdirAll(config.DumpPath, 0755)
+		if err != nil {
+			panic("Error al crear directorio de dumps: " + err.Error())
+		}
+	}
+
+	globalsMemoria.MemoriaUsuario = make([]byte, globalsMemoria.MemoriaConfig.MemorySize)
+	globalsMemoria.BitmapMarcosLibres = make([]bool, globalsMemoria.MemoriaConfig.MemorySize/globalsMemoria.MemoriaConfig.PageSize)
+	for i := range globalsMemoria.BitmapMarcosLibres {
+		globalsMemoria.BitmapMarcosLibres[i] = true
+	}
+
+	globalsMemoria.ProcesosEnMemoria = make([]globalsMemoria.Proceso, 0)
+
 	return config
-}
-
-// Por ahora solo responde 200 OK y loguea la llegada
-// Va a tener que recibir un PID y un PC (en ese orden) y responder con la siguiente instruccion
-
-func Swapear() error {
-	return nil
 }
 
 // Inicia la configuración leyendo el archivo JSON correspondiente
@@ -475,14 +494,267 @@ func ObtenerConfiguracionMemoria(w http.ResponseWriter, r *http.Request) {
 }
 
 func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
-	//a implementar
+
+	clientUtils.Logger.Info("[Memoria] Petición para suspender proceso recibida desde Kernel")
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[0])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	proceso := buscarProceso(pid)
+	if proceso == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
+		http.Error(w, "PID no existe", http.StatusNotFound)
+		return
+	}
+
+	paginas := leerPaginasDeTabla(&proceso.TablaPaginasGlobal, 1)
+	if len(paginas) == 0 {
+		clientUtils.Logger.Error("No se encontraron páginas para swappear:", "pid", pid)
+		http.Error(w, "No se encontraron páginas para swappear", http.StatusNotFound)
+		return
+	}
+	//leer la tabla de paginas y escribir en el swapfile
+	swapFile, err := os.OpenFile(globalsMemoria.MemoriaConfig.SwapfilePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		clientUtils.Logger.Error("Error al abrir swapfile:", "error", err)
+		http.Error(w, "Error interno del servidor", http.StatusInternalServerError)
+		return
+	}
+
+	//leer las paginas de memoria del proceso y escribirlas en el swapfile
+	// considerando que en el swapfile se guardan paginas enteras y en memoria existe una estructura que tiene los pid, pagina y marco de lo swapeado
+
+	_, err = swapFile.Write(paginas)
+	if err != nil {
+		clientUtils.Logger.Error("Error al escribir en swapfile:", "error", err)
+		http.Error(w, "Error interno del servidor", http.StatusInternalServerError)
+		return
+	}
+
+	//mutex de tablaswap
+	globalsMemoria.MutexTablaSwap.Lock()
+	globalsMemoria.TablaSwap[pid] = append(globalsMemoria.TablaSwap[pid], globalsMemoria.ProcesoEnSwap{
+		Pid:    pid,
+		Offset: globalsMemoria.SiguienteOffsetLibre,
+		Size:   len(paginas) * globalsMemoria.MemoriaConfig.PageSize, //chequear si es correcto
+	})
+	globalsMemoria.SiguienteOffsetLibre += int64(globalsMemoria.MemoriaConfig.PageSize) * int64(len(paginas))
+
+	// Actualizar el bitmap de marcos libres y el bit de validez de las páginas
+	liberarTabla(&proceso.TablaPaginasGlobal, 1)
+
+	defer swapFile.Close()
+
+	proceso.Metricas.BajadasASwap++
+
+	clientUtils.Logger.Info("Proceso suspendido:", "pid", pid)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Proceso suspendido exitosamente"))
 }
+
 func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
-	//a implementar
+	clientUtils.Logger.Info("[Memoria] Petición para desuspender proceso recibida desde Kernel")
+
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[0])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	proceso := buscarProceso(pid)
+	if proceso == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
+		http.Error(w, "PID no existe", http.StatusNotFound)
+		return
+	}
+
+	// Leer las páginas del swapfile y asignarlas a la memoria
+	globalsMemoria.MutexTablaSwap.Lock()
+	entradas := globalsMemoria.TablaSwap[pid]
+	for numeroPagina, entrada := range entradas {
+		pagina := make([]byte, globalsMemoria.MemoriaConfig.PageSize)
+		swapFile, err := os.Open(globalsMemoria.MemoriaConfig.SwapfilePath)
+		if err != nil {
+			globalsMemoria.MutexTablaSwap.Unlock()
+			http.Error(w, "Error al abrir swapfile", http.StatusInternalServerError)
+			return
+		}
+		_, err = swapFile.ReadAt(pagina, entrada.Offset)
+		swapFile.Close()
+		if err != nil {
+			globalsMemoria.MutexTablaSwap.Unlock()
+			clientUtils.Logger.Error("Error al leer swapfile:", "error", err)
+			return
+		}
+		reAsignacionExitosa := reAsignarMemoria(pid, pagina, numeroPagina)
+
+		if !(reAsignacionExitosa) {
+			http.Error(w, "Error al reasignar memoria", http.StatusInternalServerError)
+			return
+		}
+	}
+	globalsMemoria.MutexTablaSwap.Unlock()
+
+	proceso.Metricas.SubidasAMemoria++
+
+	clientUtils.Logger.Info("Proceso desuspendido exitosamente:", "pid", pid)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Proceso desuspendido exitosamente"))
+
+}
+func reAsignarMemoria(pid int, contenidoPagina []byte, numeroPagina int) bool {
+	clientUtils.Logger.Info("Reasignando memoria al proceso", "pid", pid, "tamaño", len(contenidoPagina))
+
+	if pid < 0 {
+		return false
+	}
+	if len(contenidoPagina) > EspacioLibre() {
+		clientUtils.Logger.Error("Espacio insuficiente para reasignar memoria al proceso", "pid", pid, "tamaño requerido", len(contenidoPagina))
+		return false
+	}
+	// Si hay concurrencia en ProcesosEnMemoria, deberías protegerlo con mutex.
+
+	globalsMemoria.MutexProcesos.Lock()
+
+	proceso := buscarProceso(pid)
+	if proceso == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
+		globalsMemoria.MutexProcesos.Unlock()
+		return false
+	}
+	globalsMemoria.MutexBitmapMarcosLibres.Lock()
+	marcoLibre := buscarMarcoLibre()
+	if marcoLibre == -1 {
+		clientUtils.Logger.Error("No se encontró un marco libre para reasignar memoria", "pid", pid)
+		globalsMemoria.MutexProcesos.Unlock()
+		globalsMemoria.MutexBitmapMarcosLibres.Unlock()
+		return false
+	}
+
+	// Escribe el marco libre con el contenido de la pagina
+	copy(globalsMemoria.MemoriaUsuario[marcoLibre*globalsMemoria.MemoriaConfig.PageSize:], contenidoPagina)
+
+	// Reescribir el marco de memoria a la entrada de la ultima tabla mutinivel y marcarlo como válido, presente y modificado
+	if len(proceso.TablaPaginasGlobal.Entradas) == 0 {
+		clientUtils.Logger.Error("Tabla de páginas del proceso está vacía, no se puede reasignar memoria", "pid", pid)
+		globalsMemoria.MutexProcesos.Unlock()
+		globalsMemoria.MutexBitmapMarcosLibres.Unlock()
+		return false
+	}
+
+	//ahora tengo que buscar en base a la pagina espeficifica que tengo dentro de las tablas y reasignale el marco y los bits
+	//aca deberia hacer el calculo raro para saber a que entrada de cada tabla tengo que entrar para poder modificar la ultima
+	reasignarPaginaEnJerarquia(pid, numeroPagina, marcoLibre)
+	globalsMemoria.MutexProcesos.Unlock()
+	globalsMemoria.BitmapMarcosLibres[marcoLibre] = false // Marcar el marco como ocupado
+	globalsMemoria.MutexBitmapMarcosLibres.Unlock()
+
+	//  limpiar la entradas swap
+	globalsMemoria.MutexTablaSwap.Lock()
+	delete(globalsMemoria.TablaSwap, pid)
+	globalsMemoria.MutexTablaSwap.Unlock()
+	return true
+}
+
+func reasignarPaginaEnJerarquia(pid int, nroPagina int, marcoLibre int) bool {
+	// Navegar por la jerarquía hasta el nivel correspondiente
+	actual := &globalsMemoria.ProcesosEnMemoria[pid].TablaPaginasGlobal
+	for nivel := 1; nivel < globalsMemoria.MemoriaConfig.NumberOfLevels; nivel++ {
+		indice := calcularIndice(nroPagina, nivel)
+		siguiente := actual.Entradas[indice]
+		if siguiente == nil {
+			clientUtils.Logger.Error("Error: no se encontró la tabla en el nivel esperado", "nivel", nivel, "nroPagina", nroPagina)
+			return true
+		}
+		tablaExistente, esTabla := siguiente.(*globalsMemoria.TablaPaginas)
+		if !esTabla {
+			clientUtils.Logger.Error("Error: la entrada no debería ser una página", "nivel", nivel, "nroPagina", nroPagina)
+			return true
+		}
+		actual = tablaExistente
+	}
+
+	// Nivel N: insertar página real
+	indiceFinal := calcularIndice(nroPagina, globalsMemoria.MemoriaConfig.NumberOfLevels-1)
+
+	pagina, ok := actual.Entradas[indiceFinal].(*globalsMemoria.Pagina)
+	if ok {
+		clientUtils.Logger.Info("Reasignando página en nivel final", "nroPagina", nroPagina, "marcoLibre", marcoLibre)
+		pagina.MutexPagina.Lock()
+		defer pagina.MutexPagina.Unlock()
+		pagina.Marco = marcoLibre
+		pagina.Presencia = true
+		pagina.BitModificado = true
+	} else {
+		clientUtils.Logger.Error("Error: la entrada final no debería ser una página", "nroPagina", nroPagina)
+	}
+
+	return false // No hubo error
 }
 
 func DumpMemoria(w http.ResponseWriter, r *http.Request) {
 	//a implementar
+	clientUtils.Logger.Info("[Memoria] Petición para hacer dump de memoria recibida desde Kernel")
+
+	pedido := serverUtils.RecibirPaquetes(w, r)
+	pid, err := strconv.Atoi(pedido.Valores[0])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PID")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	proceso := buscarProceso(pid)
+	if proceso == nil {
+		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
+		http.Error(w, "PID no existe", http.StatusNotFound)
+		return
+	}
+
+	//el archivo debe llamarse pid-timestamp.dmp
+	archivoDump, err := os.Create(globalsMemoria.MemoriaConfig.DumpPath + strconv.Itoa(pid) + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".dmp")
+	if err != nil {
+		clientUtils.Logger.Error("Error al crear el nombre del archivo de dump:", "error", err)
+		http.Error(w, "Error interno del servidor", http.StatusInternalServerError)
+		return
+	}
+	defer archivoDump.Close()
+
+	//reservar espacio para el archivo de dump
+	err = archivoDump.Truncate(int64(proceso.Size))
+	if err != nil {
+		clientUtils.Logger.Error("Error al reservar espacio en el archivo de dump:", "error", err)
+		http.Error(w, "Error interno del servidor", http.StatusInternalServerError)
+		return
+	}
+
+	globalsMemoria.MutexProcesos.Lock()
+	defer globalsMemoria.MutexProcesos.Unlock()
+
+	// Escribir instrucciones del proceso con ese pid que esta en memoria en el archivo de dump
+	// no recuerdo si no estan tambien guardadas en memoria y referenciadas por las tabla de paginas
+	for i := 0; i < len(proceso.Instrucciones); i++ {
+		instruccion := proceso.Instrucciones[i]
+		if _, err := archivoDump.WriteString(instruccion + "\n"); err != nil {
+			clientUtils.Logger.Error("Error al escribir en el archivo de dump:", "error", err)
+			http.Error(w, "Error interno del servidor", http.StatusInternalServerError)
+			return
+		}
+	}
+	archivoDump.Sync() // Asegurarse de que los datos se escriban en el disco
+
+	archivoDump.Write(leerPaginasDeTabla(&proceso.TablaPaginasGlobal, 1)) //algo asi para escribir las paginas de memoria
+	archivoDump.Sync()
+
+	liberarTabla(&proceso.TablaPaginasGlobal, 1) // Liberar la tabla de páginas del proceso
+
+	clientUtils.Logger.Info("Dump de memoria creado exitosamente:", "archivo", archivoDump.Name())
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Dump de memoria creado exitosamente"))
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -592,15 +864,6 @@ func asignarMemoria(pid int, instrucciones []string) bool {
 
 	return true
 }
-func rollback(proceso *globalsMemoria.Proceso, marcos []int) {
-	globalsMemoria.MutexBitmapMarcosLibres.Lock()
-	for _, m := range marcos {
-		globalsMemoria.BitmapMarcosLibres[m] = true
-	}
-	globalsMemoria.MutexBitmapMarcosLibres.Unlock()
-
-	liberarTabla(&proceso.TablaPaginasGlobal, 1)
-}
 
 func insertarPaginaEnJerarquia(tabla *globalsMemoria.TablaPaginas, pagina *globalsMemoria.Pagina, nroPagina int, niveles int) bool {
 	// Navegar o crear jerarquía desde Nivel 1 hasta Nivel N-1
@@ -652,30 +915,73 @@ func buscarMarcoLibre() int {
 	// No hay marcos libres
 	return -1
 }
+func rollback(proceso *globalsMemoria.Proceso, marcos []int) {
+	globalsMemoria.MutexBitmapMarcosLibres.Lock()
+	for _, m := range marcos {
+		globalsMemoria.BitmapMarcosLibres[m] = true
+	}
+	globalsMemoria.MutexBitmapMarcosLibres.Unlock()
+
+	liberarTabla(&proceso.TablaPaginasGlobal, 1)
+}
 
 func liberarTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) {
-	for i, entrada := range tabla.Entradas {
+	for _, entrada := range tabla.Entradas {
 		if entrada == nil {
 			return
 		}
 		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
 			// Es una página real
 			pagina, ok := entrada.(*globalsMemoria.Pagina)
-			if ok && pagina.Validez {
+			if ok && pagina.Presencia {
+				pagina.MutexPagina.Lock()
 				globalsMemoria.MutexBitmapMarcosLibres.Lock()
 				globalsMemoria.BitmapMarcosLibres[pagina.Marco] = true
 				globalsMemoria.MutexBitmapMarcosLibres.Unlock()
+				pagina.Presencia = false // Marcar la página como no válida
+				pagina.MutexPagina.Unlock()
 			}
-			tabla.Entradas[i] = nil
+
 		} else {
 			subtabla, ok := entrada.(*globalsMemoria.TablaPaginas)
 			if ok {
 				liberarTabla(subtabla, nivelActual+1)
 			}
-			// eliminar todo lo que esta apuntado por esa entrada como estamos en go no tengo que preocuparme por liberar memoria :)
-			tabla.Entradas[i] = nil
+
 		}
 	}
+}
+func leerPaginasDeTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) []byte {
+	var paginasEnMemoria []byte
+
+	for _, entrada := range tabla.Entradas {
+		if entrada == nil {
+			continue
+		}
+
+		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
+			pagina, ok := entrada.(*globalsMemoria.Pagina)
+			if ok && pagina.Presencia {
+				pagina.MutexPagina.Lock()
+				marco := pagina.Marco
+				// Leer contenido del marco físico en memoria
+				for i := 0; i < globalsMemoria.MemoriaConfig.PageSize; i++ {
+					contenido := globalsMemoria.MemoriaUsuario[marco]
+					paginasEnMemoria = append(paginasEnMemoria, contenido)
+					marco++
+				}
+				pagina.MutexPagina.Unlock()
+			}
+		} else {
+			subtabla, ok := entrada.(*globalsMemoria.TablaPaginas)
+			if ok {
+				subPaginas := leerPaginasDeTabla(subtabla, nivelActual+1)
+				paginasEnMemoria = append(paginasEnMemoria, subPaginas...)
+			}
+		}
+	}
+
+	return paginasEnMemoria
 }
 
 func EspacioLibre() int {

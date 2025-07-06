@@ -56,7 +56,7 @@ type EntradaTabla interface {
 
 type Pagina struct {
 	Marco         int
-	Validez       bool
+	Presencia     bool
 	BitUso        bool
 	BitModificado bool
 	Permisos      struct {
@@ -66,10 +66,10 @@ type Pagina struct {
 	MutexPagina sync.Mutex
 }
 
-func NewPagina(marco int, validez bool, escritura bool, lectura bool) Pagina {
+func NewPagina(marco int, presencia bool, escritura bool, lectura bool) Pagina {
 	return Pagina{
 		Marco:         marco,
-		Validez:       validez,
+		Presencia:     presencia,
 		BitUso:        false,
 		BitModificado: false,
 		Permisos: struct {
@@ -110,6 +110,18 @@ var MemoriaUsuario []byte
 var BitmapMarcosLibres []bool
 
 var ProcesosEnMemoria []Proceso
+
+type ProcesoEnSwap struct {
+	Pid    int
+	Size   int
+	Offset int64
+}
+
+var TablaSwap = make(map[int][]ProcesoEnSwap) // PID -> lista de procesos swap-eados
+
+var MutexTablaSwap sync.Mutex
+
+var SiguienteOffsetLibre int64 = 0
 
 var MutexProcesos sync.Mutex
 var MutexBitmapMarcosLibres sync.Mutex
