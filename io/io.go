@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	ioGlobalUtils "github.com/sisoputnfrba/tp-golang/io/globalsIO"
@@ -34,7 +35,7 @@ func main() {
 	fmt.Printf("[IO] Servidor iniciado en puerto %d para dispositivo %s\n", puertoLibre, ioUtils.Nombre)
 	// Handshake al Kernel
 	ioUtils.EnviarHandshakeAKernel(ioUtils.Nombre, puertoLibre)
-
+	ioUtils.Puerto = strconv.Itoa(puertoLibre)
 	// Registrar endpoint
 	mux := http.NewServeMux()
 	mux.HandleFunc("/recibirPeticion", ioUtils.RecibirPeticion)

@@ -4,12 +4,12 @@
     "memory_size": 4096,
     "page_size": 64,
     "entries_per_page": 4,
-    "number_of_levels": 5,
-    "memory_delay": 1500,
-    "swapfile_path": "/home/utnso/swapfile.bin",
+    "number_of_levels": 2,
+    "memory_delay": 500,
+    "swapfile_path": "/home/valentin/Descargas/swapfile.bin",
     "swap_delay": 15000,
-    "log_level": "DEBUG",
-    "dump_path": "/home/utnso/dump_files/",
-    "scripts_path": "/home/utnso/scripts/"
+    "log_level": "INFO",
+    "dump_path": "/home/valentin/Descargas/",
+    "scripts_path": "/home/valentin/facultad/revenge-of-the-cth-pruebas/"
 }
 

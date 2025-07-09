@@ -74,7 +74,8 @@ func EnviarPaquete(ip string, puerto int, direccion string, paquete Paquete) {
 	url := fmt.Sprintf("http://%s:%d/%s", ip, puerto, direccion)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
 	if err != nil {
-		log.Printf("error enviando mensajes a ip:%s puerto:%d", ip, puerto)
+		log.Printf("error enviando mensajes a ip:%s puerto:%d - %s", ip, puerto, err.Error())
+		return
 	}
 
 	log.Printf("respuesta del servidor: %s", resp.Status)

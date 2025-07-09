@@ -56,7 +56,7 @@ func InciarPcp() PlanificadorCortoPlazo {
 	algoritmo := globalskernel.KernelConfig.SchedulerAlgorithm
 	if algoritmo == "FIFO" {
 		estrategia = FIFOScheduler{}
-	} else if algoritmo == "SFJ" {
+	} else if algoritmo == "SJF" {
 		estrategia = SJFScheduler{}
 	} else if algoritmo == "SRT" {
 		estrategia = SRTScheduler{}
@@ -110,7 +110,6 @@ func (cpu *Cpu) enviarProceso(PID uint, PC uint) {
 func (cpu *Cpu) enviarInterrupcion(motivo string) {
 	valores := []string{motivo}
 	paquete := clientUtils.Paquete{Valores: valores}
-	cpu.PIDenEjecucion = PID
 	endpoint := "recibirInterrupcion"
 
 	clientUtils.EnviarPaquete(cpu.Ip, cpu.Puerto, endpoint, paquete)
@@ -211,7 +210,7 @@ type Io struct {
 	Ip             string
 	Puerto         int
 	ocupada        bool
-	PIDEnEjecucion uint
+	PIDEnEjecucion int
 	mu             sync.Mutex
 }
 
@@ -287,7 +286,7 @@ func (gi *GrupoIo) EliminarIo(io *Io) {
 	}
 }
 
-func (gi *GrupoIo) BuscarIoPorPID(pid uint) (*Io, bool) {
+func (gi *GrupoIo) BuscarIoPorPID(pid int) (*Io, bool) {
 	gi.mu.Lock()
 	defer gi.mu.Unlock()
 
@@ -317,13 +316,13 @@ func (io *Io) EstaOcupada() bool {
 	return io.ocupada
 }
 
-func (io *Io) SetPIDEnEjecucion(pid uint) {
+func (io *Io) SetPIDEnEjecucion(pid int) {
 	io.mu.Lock()
 	defer io.mu.Unlock()
 	io.PIDEnEjecucion = pid
 }
 
-func (io *Io) ObtenerPIDEnEjecucion() uint {
+func (io *Io) ObtenerPIDEnEjecucion() int {
 	io.mu.Lock()
 	defer io.mu.Unlock()
 	return io.PIDEnEjecucion
@@ -332,7 +331,7 @@ func (io *Io) ObtenerPIDEnEjecucion() uint {
 func (io *Io) enviarProceso(PID uint, time int) {
 	valores := []string{strconv.Itoa(int(PID)), strconv.Itoa(time)}
 	paquete := clientUtils.Paquete{Valores: valores}
-	io.SetPIDEnEjecucion(PID)
+	io.SetPIDEnEjecucion(int(PID))
 	//Mandamos el PID y tiempo al endpoint de IO
 	endpoint := "recibirPeticion"
 
@@ -361,7 +360,7 @@ func (im *IoMap) AgregarGrupoIo(grupo *GrupoIo) {
 	}
 }
 
-func (im *IoMap) BuscarIoPorGrupoYPID(nombre string, pid uint) (*Io, bool) {
+func (im *IoMap) BuscarIoPorGrupoYPID(nombre string, pid int) (*Io, bool) {
 	im.mu.Lock()
 	grupo, ok := im.ios[nombre]
 	im.mu.Unlock()
@@ -370,6 +369,25 @@ func (im *IoMap) BuscarIoPorGrupoYPID(nombre string, pid uint) (*Io, bool) {
 	}
 
 	return grupo.BuscarIoPorPID(pid)
+}
+
+func (im *IoMap) BuscarIoPorGrupoIPyPuerto(nombreGrupo, ip string, puerto int) (*Io, bool) {
+	im.mu.Lock()
+	grupo, ok := im.ios[nombreGrupo]
+	im.mu.Unlock()
+	if !ok {
+		return nil, false
+	}
+
+	grupo.mu.Lock()
+	defer grupo.mu.Unlock()
+
+	for _, io := range grupo.Ios {
+		if io.Ip == ip && io.Puerto == puerto {
+			return io, true
+		}
+	}
+	return nil, false
 }
 
 //-------------- Estructuras generales para el manejo de estados -------------------
@@ -793,8 +811,8 @@ func (plp *PlanificadorLargoPlazo) EnviarSuspensionMemoria(proceso *PCB) {
 	//Si no responde con 200 OK, lo logueamos como advertencia
 	if resp == nil {
 		clientUtils.Logger.Warn(fmt.Sprintf("Error de conexión al realizar swap del proceso PID %d (respuesta nula)", proceso.PID))
-	} else {
-		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la solicitud de swap del proceso PID %d. Status: %s", proceso.PID, resp.Status))
+	} else if resp.StatusCode != http.StatusOK {
+		clientUtils.Logger.Info(fmt.Sprintf("Memoria rechazo la solicitud de swap del proceso PID %d. Status: %s", proceso.PID, resp.Status))
 	}
 }
 
@@ -837,10 +855,14 @@ type SRTScheduler struct {
 }
 
 func (s SRTScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
+
 	proximo, ok := pcp.readyState.SacarProcesoConMenorEstimacion()
 	if ok {
 		proximo.MT.readyTime += proximo.timeInState()
 		pcp.ejecutar(proximo)
+	} else {
+		clientUtils.Logger.Error("Error al encontrar proximo a  ejecución")
+
 	}
 }
 
@@ -860,7 +882,8 @@ func (s SRTScheduler) intentarDesalojo(pcp *PlanificadorCortoPlazo, procesoNuevo
 		proceso.estaSiendoDesalojado.Store(true)
 		go cpu.enviarInterrupcion("DESALOJO")
 		cpu.sem_interrupcionAtendida <- struct{}{}
-		pcp.ejecutarConDesalojo(procesoNuevo, cpu)
+		procesoSelecionado, _ := pcp.readyState.BuscarYSacarPorPID(procesoNuevo.PID)
+		pcp.ejecutarConDesalojo(procesoSelecionado, cpu)
 	}
 }
 
@@ -875,7 +898,9 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso *PCB) {
 	proceso.ME.readyCount++
 	pcp.readyState.Agregar(proceso)
 
-	if cpusLibres.Vacia() {
+	if proceso.estaSiendoDesalojado.Load() {
+		proceso.estaSiendoDesalojado.Store(false)
+	} else if cpusLibres.Vacia() {
 		go pcp.schedulerEstrategy.intentarDesalojo(pcp, proceso)
 	}
 
@@ -983,6 +1008,7 @@ func (pmp *PlanificadorMedianoPlazo) EnviarProcesoASuspReady(proceso *PCB) {
 	proceso.ME.suspReadyCount++
 
 	if Pmp.suspReadyState.Vacia() {
+		clientUtils.Logger.Info(fmt.Sprintf("## (%d) Se intenta inicializar", proceso.PID))
 		pmp.intentarInicializar(proceso)
 	} else {
 		pmp.suspReadyEstrategy.manejarIngresoDeProceso(proceso, pmp)
@@ -1019,7 +1045,7 @@ func (pmp *PlanificadorMedianoPlazo) EnviarDesSuspensionPedidoMemoria(proceso *P
 	// Obtenemos IP y puerto de Memoria desde la config global del Kernel
 	ip := globalskernel.KernelConfig.IpMemory
 	puerto := globalskernel.KernelConfig.PortMemory
-	endpoint := "desSuspenderProceso"
+	endpoint := "desuspenderProceso"
 
 	resp := clientUtils.EnviarPaqueteConRespuesta(ip, puerto, endpoint, paquete)
 
@@ -1085,14 +1111,14 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 
 	// saco el proceso de EXEC y acumulo cuanto tiempo estuvo ejecutando
 	proceso, ok := Plp.pcp.execState.BuscarYSacarPorPID(cpu.PIDenEjecucion)
-	tiempoEjecucion := proceso.timeInState()
-	proceso.MT.execTime += tiempoEjecucion
-	proceso.calcularProximaEstimacion(tiempoEjecucion)
 	if !ok {
-		clientUtils.Logger.Error("Error al encontrar el proceso en ejecucion")
+		clientUtils.Logger.Error(fmt.Sprintf("Error al encontrar el proceso en ejecucion PID:%d", cpu.PIDenEjecucion))
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
+	tiempoEjecucion := proceso.timeInState()
+	proceso.MT.execTime += tiempoEjecucion
+	proceso.calcularProximaEstimacion(tiempoEjecucion)
 
 	pcActualizado, err := strconv.Atoi(respuesta.Valores[PC])
 	if err != nil {
@@ -1145,8 +1171,7 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DESALOJO" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Desalojado por algoritmo SJF/SRT", proceso.PID))
-		proceso.estaSiendoDesalojado.Store(false)
-		Plp.pcp.RecibirProceso(proceso)
+		go Plp.pcp.RecibirProceso(proceso)
 		<-cpu.sem_interrupcionAtendida
 	} else {
 		clientUtils.Logger.Error("Error, motivo de devolución de proceso desconocido")
@@ -1206,13 +1231,16 @@ func manejarIo(respuesta serverUtils.Paquete, proceso *PCB) {
 		return
 	}
 	grupoIo, ok := iosRegistradas.ObtenerGrupo(nombre)
-	if ok {
+	if ok && grupoIo.ExistenInstancias() {
 		clientUtils.Logger.Info(fmt.Sprintf(`## (%d) - Bloqueado por IO: %s`, proceso.PID, nombre))
 		Plp.pcp.EnviarProcesoABlocked(proceso)
 		ioDesocupada, ok := grupoIo.ObtenerIoLibre()
 		if !ok {
+			clientUtils.Logger.Error("lo agregue a la cola de pedidos")
+
 			grupoIo.AgregarPedido(PedidoIo{PID: proceso.PID, time: time})
 		} else {
+			clientUtils.Logger.Error("llegie a mandar el pedido")
 			ioDesocupada.enviarProceso(proceso.PID, time)
 		}
 	} else {
@@ -1247,6 +1275,7 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 		manejarPendientesIo(nombre)
 	} else {
 		nuevoGrupo := &GrupoIo{Nombre: nombre}
+		nuevoGrupo.AgregarIo(nuevaIo)
 		iosRegistradas.AgregarGrupoIo(nuevoGrupo)
 		clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %s", nombre))
 	}
@@ -1254,11 +1283,12 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 
 const (
 	NOMBRE = iota
-	MOTIVO_DEVOLUCION_IO
 	PID
+	IP     = 1
+	PUERTO = 2
 )
 
-func ResultadoIos(w http.ResponseWriter, r *http.Request) {
+func FinIos(w http.ResponseWriter, r *http.Request) {
 	paquete := serverUtils.RecibirPaquetes(w, r)
 	nombre := paquete.Valores[NOMBRE]
 	ioPid, err := strconv.Atoi(paquete.Valores[PID])
@@ -1279,27 +1309,64 @@ func ResultadoIos(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ioOcupada, ok := iosRegistradas.BuscarIoPorGrupoYPID(nombre, uint(ioPid))
+	ioOcupada, ok := iosRegistradas.BuscarIoPorGrupoYPID(nombre, ioPid)
 	if !ok {
 		clientUtils.Logger.Error("Error al buscar la IO por su PID")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	if paquete.Valores[MOTIVO_DEVOLUCION_IO] == "Fin" {
-		ioOcupada.MarcarLibre()
-		go manejarPendientesIo(nombre)
-		if estaEnBlocked {
-			clientUtils.Logger.Info(fmt.Sprintf("## (%d) finalizó IO y pasa a READY", proceso.PID))
-			proceso.MT.blockedTime += proceso.timeInState()
-			Plp.pcp.RecibirProceso(proceso)
-		} else if estaEnSuspBlocked {
-			proceso.MT.suspBlockedTime += proceso.timeInState()
-			Pmp.EnviarProcesoASuspReady(proceso)
-		}
-	} else if paquete.Valores[MOTIVO_DEVOLUCION_IO] == "Desconexion" {
-		manejarDesconexionIo(nombre, ioOcupada)
-		Plp.FinalizarProceso(proceso)
+
+	ioOcupada.MarcarLibre()
+	ioOcupada.SetPIDEnEjecucion(-1)
+	go manejarPendientesIo(nombre)
+	if estaEnBlocked {
+		clientUtils.Logger.Info(fmt.Sprintf("## (%d) finalizó IO y pasa a READY", proceso.PID))
+		proceso.MT.blockedTime += proceso.timeInState()
+		Plp.pcp.RecibirProceso(proceso)
+	} else if estaEnSuspBlocked {
+		proceso.MT.suspBlockedTime += proceso.timeInState()
+		Pmp.EnviarProcesoASuspReady(proceso)
 	}
+}
+
+func DesconexionIos(w http.ResponseWriter, r *http.Request) {
+	paquete := serverUtils.RecibirPaquetes(w, r)
+	nombre := paquete.Valores[NOMBRE]
+	puerto, err := strconv.Atoi(paquete.Valores[PUERTO])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear PUERTO de IO")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	var proceso *PCB
+	// BUSCAR LA IO POR SU IP Y PUERTO
+	io, ok := iosRegistradas.BuscarIoPorGrupoIPyPuerto(nombre, paquete.Valores[IP], puerto)
+	if !ok {
+		clientUtils.Logger.Error("Error al encontrar IO")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	// FIJARSE SI TIENE UN PID EN EJECUCION
+	if io.PIDEnEjecucion >= 0 {
+
+		var estaEnBlocked bool
+		var estaEnSuspBlocked bool
+
+		proceso, estaEnSuspBlocked = Pmp.suspBlockedState.BuscarYSacarPorPID(uint(io.PIDEnEjecucion))
+		if !estaEnSuspBlocked {
+			proceso, estaEnBlocked = Plp.blockedState.BuscarYSacarPorPID(uint(io.PIDEnEjecucion))
+			if !estaEnBlocked {
+				clientUtils.Logger.Error("Error al encontrar el proceso en blocked")
+				http.Error(w, "Bad Request", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	manejarDesconexionIo(nombre, io)
+	Plp.FinalizarProceso(proceso)
 }
 
 func manejarPendientesIo(nombre string) {

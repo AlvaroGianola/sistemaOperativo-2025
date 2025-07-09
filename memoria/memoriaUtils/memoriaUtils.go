@@ -51,8 +51,8 @@ func IniciarConfiguracion(filePath string) *globalsMemoria.Config {
 		}
 	}
 
-	globalsMemoria.MemoriaUsuario = make([]byte, globalsMemoria.MemoriaConfig.MemorySize)
-	globalsMemoria.BitmapMarcosLibres = make([]bool, globalsMemoria.MemoriaConfig.MemorySize/globalsMemoria.MemoriaConfig.PageSize)
+	globalsMemoria.MemoriaUsuario = make([]byte, config.MemorySize)
+	globalsMemoria.BitmapMarcosLibres = make([]bool, config.MemorySize/config.PageSize)
 	for i := range globalsMemoria.BitmapMarcosLibres {
 		globalsMemoria.BitmapMarcosLibres[i] = true
 	}
@@ -184,6 +184,11 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proceso := buscarProceso(pid)
+	if proceso == nil {
+		clientUtils.Logger.Error("PID no existente en memoria:", "pid", pid)
+		http.Error(w, "PID no existente en memoria", http.StatusBadRequest)
+		return
+	}
 	clientUtils.Logger.Info("Buscando proceso", "pid", pid)
 	clientUtils.Logger.Info("Proceso encontrado", "pid", pid, "instrucciones", len(proceso.Instrucciones))
 	if pc < 0 || pc > len(proceso.Instrucciones)-1 {
@@ -574,34 +579,37 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Leer las páginas del swapfile y asignarlas a la memoria
 	globalsMemoria.MutexTablaSwap.Lock()
-	entradas := globalsMemoria.TablaSwap[pid]
+	entradas, ok := globalsMemoria.TablaSwap[pid]
+	globalsMemoria.MutexTablaSwap.Unlock()
+
+	if !ok {
+		http.Error(w, "PID no encontrado en TablaSwap", http.StatusNotFound)
+		return
+	}
+
+	swapFile, err := os.Open(globalsMemoria.MemoriaConfig.SwapfilePath)
+	if err != nil {
+		http.Error(w, "Error al abrir swapfile", http.StatusInternalServerError)
+		return
+	}
+	defer swapFile.Close()
+
 	for numeroPagina, entrada := range entradas {
 		pagina := make([]byte, globalsMemoria.MemoriaConfig.PageSize)
-		swapFile, err := os.Open(globalsMemoria.MemoriaConfig.SwapfilePath)
-		if err != nil {
-			globalsMemoria.MutexTablaSwap.Unlock()
-			http.Error(w, "Error al abrir swapfile", http.StatusInternalServerError)
-			return
-		}
 
-		_, err = swapFile.ReadAt(pagina, entrada.Offset)
-
-		swapFile.Close()
+		_, err := swapFile.ReadAt(pagina, entrada.Offset)
 		if err != nil {
-			globalsMemoria.MutexTablaSwap.Unlock()
 			clientUtils.Logger.Error("Error al leer swapfile:", "error", err)
+			http.Error(w, "Error al leer swapfile", http.StatusInternalServerError)
 			return
 		}
-		reAsignacionExitosa := reAsignarMemoria(pid, pagina, numeroPagina)
 
-		if !(reAsignacionExitosa) {
+		if !reAsignarMemoria(pid, pagina, numeroPagina) {
 			http.Error(w, "Error al reasignar memoria", http.StatusInternalServerError)
 			return
 		}
 	}
-	globalsMemoria.MutexTablaSwap.Unlock()
 
 	proceso.Metricas.SubidasAMemoria++
 

@@ -15,7 +15,7 @@ import (
 )
 
 var Nombre string
-var PIDenEjecucion string
+var Puerto string
 
 // Lee el archivo de configuración y lo parsea en la estructura Config
 func IniciarConfiguracion(filePath string) *ioGlobalUtils.Config {
@@ -43,7 +43,6 @@ func RecibirPeticion(w http.ResponseWriter, r *http.Request) {
 
 	// Log obligatorio de inicio de IO
 	clientUtils.Logger.Info(fmt.Sprintf("PID: %s - Inicio de IO - Tiempo: %s", peticion.Valores[PID], peticion.Valores[TIME]))
-	PIDenEjecucion = peticion.Valores[PID]
 	// Simula la ejecución del IO (usleep equivalente con time.Sleep)
 	milisegundos, err := strconv.Atoi(peticion.Valores[TIME])
 	if err != nil {
@@ -56,7 +55,6 @@ func RecibirPeticion(w http.ResponseWriter, r *http.Request) {
 	// Log obligatorio de fin de IO
 	clientUtils.Logger.Info(fmt.Sprintf("PID: %s - Fin de IO", peticion.Valores[PID]))
 	avisarFinIO(peticion.Valores[PID])
-	PIDenEjecucion = ""
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -71,14 +69,14 @@ func EnviarHandshakeAKernel(nombre string, puertoIo int) {
 }
 
 func avisarFinIO(PID string) {
-	valores := []string{Nombre, "Fin", PID}
-	endpoint := "resultadoIos"
+	valores := []string{Nombre, PID}
+	endpoint := "finIos"
 	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, endpoint)
 }
 
 func AvisarDesconexion() {
-	valores := []string{Nombre, "Desconexion", PIDenEjecucion}
-	endpoint := "resultadosIos"
+	valores := []string{Nombre, ioGlobalUtils.IoConfig.IPIo, Puerto}
+	endpoint := "desconexionIos"
 	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, endpoint)
 	clientUtils.Logger.Info(fmt.Sprintf("[IO] Dispositivo %s notifica su cierre al Kernel", Nombre))
 }
