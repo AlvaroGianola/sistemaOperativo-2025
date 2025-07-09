@@ -196,6 +196,7 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 
 	clientUtils.Logger.Info("Instrucción siguiente:", "pid", pid, "pc", pc, "instrucción", instruccion)
 
+	proceso.Metricas.InstruccionesSolicitadas++
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(instruccion))
 }
@@ -293,8 +294,8 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-
-	if buscarProceso(pid) == nil {
+	proceso := buscarProceso(pid)
+	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
@@ -335,8 +336,9 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Simulamos la lectura de la página, en realidad deberíamos leer desde el marco
-
+	proceso.Metricas.LecturasDeMemoria++
 	clientUtils.Logger.Info("Página leída", "pid", pid, "marco", marco, "contenido", contenido)
+
 	w.Write([]byte(contenido))
 	w.WriteHeader(http.StatusOK)
 }
@@ -352,7 +354,8 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	if buscarProceso(pid) == nil {
+	proceso := buscarProceso(pid)
+	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
@@ -391,7 +394,7 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 
 		globalsMemoria.MemoriaUsuario[marco+i] = byte(contenido)
 	}
-
+	proceso.Metricas.EscriturasDeMemoria++
 	clientUtils.Logger.Info("Página escrita", "pid", pid, "marco", marco, "tamaño", tamanioEnviado)
 	w.WriteHeader(http.StatusOK)
 
@@ -408,8 +411,8 @@ func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-
-	if buscarProceso(pid) == nil {
+	proceso := buscarProceso(pid)
+	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
@@ -424,7 +427,7 @@ func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 
 	contenido := globalsMemoria.MemoriaUsuario[direccionFisica]
 	// Simulamos la escritura de la dirección física
-
+	proceso.Metricas.LecturasDeMemoria++
 	w.Write([]byte{contenido})
 	w.WriteHeader(http.StatusOK)
 }
@@ -440,8 +443,8 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-
-	if buscarProceso(pid) == nil {
+	proceso := buscarProceso(pid)
+	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
@@ -455,6 +458,7 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 	}
 	contenido := []byte(pedido.Valores[2])
 
+	proceso.Metricas.EscriturasDeMemoria++
 	globalsMemoria.MemoriaUsuario[direccionFisica] = contenido[0]
 
 	w.WriteHeader(http.StatusOK)
@@ -532,8 +536,12 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	//mutex de tablaswap
 	globalsMemoria.MutexTablaSwap.Lock()
 	globalsMemoria.TablaSwap[pid] = append(globalsMemoria.TablaSwap[pid], globalsMemoria.ProcesoEnSwap{
-		Base: globalsMemoria.SiguienteOffsetLibre,
-		Size: len(paginas) * globalsMemoria.MemoriaConfig.PageSize, //chequear si es correcto
+
+    
+		Pid:    pid,
+		Offset: globalsMemoria.SiguienteOffsetLibre,
+		Size:   len(paginas) * globalsMemoria.MemoriaConfig.PageSize, //chequear si es correcto
+
 	})
 	globalsMemoria.SiguienteOffsetLibre += int64(globalsMemoria.MemoriaConfig.PageSize) * int64(len(paginas))
 
@@ -578,7 +586,9 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error al abrir swapfile", http.StatusInternalServerError)
 			return
 		}
-		_, err = swapFile.ReadAt(pagina, entrada.Base)
+
+		_, err = swapFile.ReadAt(pagina, entrada.Offset)
+
 		swapFile.Close()
 		if err != nil {
 			globalsMemoria.MutexTablaSwap.Unlock()
@@ -682,7 +692,9 @@ func reasignarPaginaEnJerarquia(pid int, nroPagina int, marcoLibre int) bool {
 		pagina.MutexPagina.Lock()
 		defer pagina.MutexPagina.Unlock()
 		pagina.Marco = marcoLibre
-		pagina.Validez = true
+
+		pagina.Presencia = true
+
 		pagina.BitModificado = true
 	} else {
 		clientUtils.Logger.Error("Error: la entrada final no debería ser una página", "nroPagina", nroPagina)
@@ -927,12 +939,16 @@ func liberarTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) {
 		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
 			// Es una página real
 			pagina, ok := entrada.(*globalsMemoria.Pagina)
-			if ok && pagina.Validez {
+
+			if ok && pagina.Presencia {
+
 				pagina.MutexPagina.Lock()
 				globalsMemoria.MutexBitmapMarcosLibres.Lock()
 				globalsMemoria.BitmapMarcosLibres[pagina.Marco] = true
 				globalsMemoria.MutexBitmapMarcosLibres.Unlock()
-				pagina.Validez = false // Marcar la página como no válida
+
+				pagina.Presencia = false // Marcar la página como no válida
+
 				pagina.MutexPagina.Unlock()
 			}
 
@@ -941,6 +957,7 @@ func liberarTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) {
 			if ok {
 				liberarTabla(subtabla, nivelActual+1)
 			}
+
 
 		}
 	}
@@ -956,6 +973,39 @@ func leerPaginasDeTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) []b
 		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
 			pagina, ok := entrada.(*globalsMemoria.Pagina)
 			if ok && pagina.Validez {
+				pagina.MutexPagina.Lock()
+				marco := pagina.Marco
+				// Leer contenido del marco físico en memoria
+				for i := 0; i < globalsMemoria.MemoriaConfig.PageSize; i++ {
+					contenido := globalsMemoria.MemoriaUsuario[marco]
+					paginasEnMemoria = append(paginasEnMemoria, contenido)
+					marco++
+				}
+				pagina.MutexPagina.Unlock()
+			}
+		} else {
+			subtabla, ok := entrada.(*globalsMemoria.TablaPaginas)
+			if ok {
+				subPaginas := leerPaginasDeTabla(subtabla, nivelActual+1)
+				paginasEnMemoria = append(paginasEnMemoria, subPaginas...)
+			}
+
+		}
+	}
+
+	return paginasEnMemoria
+}
+func leerPaginasDeTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) []byte {
+	var paginasEnMemoria []byte
+
+	for _, entrada := range tabla.Entradas {
+		if entrada == nil {
+			continue
+		}
+
+		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
+			pagina, ok := entrada.(*globalsMemoria.Pagina)
+			if ok && pagina.Presencia {
 				pagina.MutexPagina.Lock()
 				marco := pagina.Marco
 				// Leer contenido del marco físico en memoria
