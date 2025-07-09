@@ -32,7 +32,6 @@ func main() {
 		panic(err)
 	}
 	fmt.Printf("[IO] Servidor iniciado en puerto %d para dispositivo %s\n", puertoLibre, ioUtils.Nombre)
-
 	// Handshake al Kernel
 	ioUtils.EnviarHandshakeAKernel(ioUtils.Nombre, puertoLibre)
 

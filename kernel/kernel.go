@@ -19,6 +19,7 @@ func main() {
 	globalsKernel.KernelConfig = kernelUtils.IniciarConfiguracion("config.json")
 
 	kernelUtils.Plp = kernelUtils.InciarPlp()
+	kernelUtils.Pmp = kernelUtils.IniciarPmp()
 
 	args := os.Args
 	filePath := args[1]
