@@ -29,6 +29,8 @@ func main() {
 	// Endpoints que reciben peticiones desde Kernel
 	mux.HandleFunc("/iniciarProceso", memoriaUtils.IniciarProceso)
 	mux.HandleFunc("/finalizarProceso", memoriaUtils.FinalizarProceso)
+	mux.HandleFunc("/suspenderProceso", memoriaUtils.SuspenderProceso)
+	mux.HandleFunc("/desuspenderProceso", memoriaUtils.DesuspenderProceso)
 
 	// Endpoints que reciben peticiones desde CPU
 	mux.HandleFunc("/obtenerConfiguracionMemoria", memoriaUtils.ObtenerConfiguracionMemoria)

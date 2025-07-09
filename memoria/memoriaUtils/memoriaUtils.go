@@ -457,11 +457,6 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contenido := []byte(pedido.Valores[2])
-	if err != nil {
-		clientUtils.Logger.Error("Error al parsear contenido")
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
-	}
 
 	proceso.Metricas.EscriturasDeMemoria++
 	globalsMemoria.MemoriaUsuario[direccionFisica] = contenido[0]
@@ -541,9 +536,12 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	//mutex de tablaswap
 	globalsMemoria.MutexTablaSwap.Lock()
 	globalsMemoria.TablaSwap[pid] = append(globalsMemoria.TablaSwap[pid], globalsMemoria.ProcesoEnSwap{
+
+    
 		Pid:    pid,
 		Offset: globalsMemoria.SiguienteOffsetLibre,
 		Size:   len(paginas) * globalsMemoria.MemoriaConfig.PageSize, //chequear si es correcto
+
 	})
 	globalsMemoria.SiguienteOffsetLibre += int64(globalsMemoria.MemoriaConfig.PageSize) * int64(len(paginas))
 
@@ -588,7 +586,9 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error al abrir swapfile", http.StatusInternalServerError)
 			return
 		}
+
 		_, err = swapFile.ReadAt(pagina, entrada.Offset)
+
 		swapFile.Close()
 		if err != nil {
 			globalsMemoria.MutexTablaSwap.Unlock()
@@ -692,7 +692,9 @@ func reasignarPaginaEnJerarquia(pid int, nroPagina int, marcoLibre int) bool {
 		pagina.MutexPagina.Lock()
 		defer pagina.MutexPagina.Unlock()
 		pagina.Marco = marcoLibre
+
 		pagina.Presencia = true
+
 		pagina.BitModificado = true
 	} else {
 		clientUtils.Logger.Error("Error: la entrada final no debería ser una página", "nroPagina", nroPagina)
@@ -937,12 +939,16 @@ func liberarTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) {
 		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
 			// Es una página real
 			pagina, ok := entrada.(*globalsMemoria.Pagina)
+
 			if ok && pagina.Presencia {
+
 				pagina.MutexPagina.Lock()
 				globalsMemoria.MutexBitmapMarcosLibres.Lock()
 				globalsMemoria.BitmapMarcosLibres[pagina.Marco] = true
 				globalsMemoria.MutexBitmapMarcosLibres.Unlock()
+
 				pagina.Presencia = false // Marcar la página como no válida
+
 				pagina.MutexPagina.Unlock()
 			}
 
@@ -952,8 +958,42 @@ func liberarTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) {
 				liberarTabla(subtabla, nivelActual+1)
 			}
 
+
 		}
 	}
+}
+func leerPaginasDeTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) []byte {
+	var paginasEnMemoria []byte
+
+	for _, entrada := range tabla.Entradas {
+		if entrada == nil {
+			continue
+		}
+
+		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
+			pagina, ok := entrada.(*globalsMemoria.Pagina)
+			if ok && pagina.Validez {
+				pagina.MutexPagina.Lock()
+				marco := pagina.Marco
+				// Leer contenido del marco físico en memoria
+				for i := 0; i < globalsMemoria.MemoriaConfig.PageSize; i++ {
+					contenido := globalsMemoria.MemoriaUsuario[marco]
+					paginasEnMemoria = append(paginasEnMemoria, contenido)
+					marco++
+				}
+				pagina.MutexPagina.Unlock()
+			}
+		} else {
+			subtabla, ok := entrada.(*globalsMemoria.TablaPaginas)
+			if ok {
+				subPaginas := leerPaginasDeTabla(subtabla, nivelActual+1)
+				paginasEnMemoria = append(paginasEnMemoria, subPaginas...)
+			}
+
+		}
+	}
+
+	return paginasEnMemoria
 }
 func leerPaginasDeTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) []byte {
 	var paginasEnMemoria []byte
