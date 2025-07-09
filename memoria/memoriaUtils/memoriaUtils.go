@@ -537,7 +537,6 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	globalsMemoria.MutexTablaSwap.Lock()
 	globalsMemoria.TablaSwap[pid] = append(globalsMemoria.TablaSwap[pid], globalsMemoria.ProcesoEnSwap{
 
-    
 		Pid:    pid,
 		Offset: globalsMemoria.SiguienteOffsetLibre,
 		Size:   len(paginas) * globalsMemoria.MemoriaConfig.PageSize, //chequear si es correcto
@@ -958,43 +957,10 @@ func liberarTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) {
 				liberarTabla(subtabla, nivelActual+1)
 			}
 
-
 		}
 	}
 }
-func leerPaginasDeTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) []byte {
-	var paginasEnMemoria []byte
 
-	for _, entrada := range tabla.Entradas {
-		if entrada == nil {
-			continue
-		}
-
-		if nivelActual == globalsMemoria.MemoriaConfig.NumberOfLevels {
-			pagina, ok := entrada.(*globalsMemoria.Pagina)
-			if ok && pagina.Validez {
-				pagina.MutexPagina.Lock()
-				marco := pagina.Marco
-				// Leer contenido del marco físico en memoria
-				for i := 0; i < globalsMemoria.MemoriaConfig.PageSize; i++ {
-					contenido := globalsMemoria.MemoriaUsuario[marco]
-					paginasEnMemoria = append(paginasEnMemoria, contenido)
-					marco++
-				}
-				pagina.MutexPagina.Unlock()
-			}
-		} else {
-			subtabla, ok := entrada.(*globalsMemoria.TablaPaginas)
-			if ok {
-				subPaginas := leerPaginasDeTabla(subtabla, nivelActual+1)
-				paginasEnMemoria = append(paginasEnMemoria, subPaginas...)
-			}
-
-		}
-	}
-
-	return paginasEnMemoria
-}
 func leerPaginasDeTabla(tabla *globalsMemoria.TablaPaginas, nivelActual int) []byte {
 	var paginasEnMemoria []byte
 
