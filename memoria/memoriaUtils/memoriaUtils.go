@@ -461,10 +461,17 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	contenido := []byte(pedido.Valores[2])
+	// ✅ Esta parte es clave:
+	valorNumerico, err := strconv.Atoi(pedido.Valores[2])
+	if err != nil {
+		clientUtils.Logger.Error("Error al parsear valor a byte")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	contenido := byte(valorNumerico)
 
 	proceso.Metricas.EscriturasDeMemoria++
-	globalsMemoria.MemoriaUsuario[direccionFisica] = contenido[0]
+	globalsMemoria.MemoriaUsuario[direccionFisica] = contenido
 
 	w.WriteHeader(http.StatusOK)
 

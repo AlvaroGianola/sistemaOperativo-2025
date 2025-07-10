@@ -2,17 +2,17 @@ package tlb
 
 import (
 	"time"
+
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 )
 
-
 func AgregarATLB(pid int, pagina int, marco int) {
 	entrada := globalsCpu.EntradaTLB{
-		Pid:       pid,
-		Pagina:    pagina,
-		Marco:     marco,
-		UltimoUso: time.Now(),
+		Pid:             pid,
+		Pagina:          pagina,
+		Marco:           marco,
+		UltimoUso:       time.Now(),
 		InstanteCargado: time.Now(),
 	}
 
@@ -54,18 +54,24 @@ func BuscarEntradaMenosUsada() int {
 	return menosUsada
 }
 
-func ConsultarMarco (pagina int) (int,bool) {
+func ConsultarMarco(pagina int) (int, bool) {
+	if globalsCpu.CpuConfig.TlbEntries == 0 {
+		return -1, false
+	}
+
 	for _, entrada := range globalsCpu.Tlb {
 		if entrada.Pagina == pagina {
-			return entrada.Marco,true
+			return entrada.Marco, true
 		}
 	}
-	return -1,false
+	return -1, false
 }
 
 func LimpiarTLB() {
 	globalsCpu.TlbMutex.Lock()
 	defer globalsCpu.TlbMutex.Unlock()
-	globalsCpu.Tlb = []globalsCpu.EntradaTLB{}
-	clientUtils.Logger.Info("TLB Cleared")
+	if globalsCpu.CpuConfig.TlbEntries != 0 {
+		globalsCpu.Tlb = []globalsCpu.EntradaTLB{}
+		clientUtils.Logger.Info("TLB Cleared")
+	}
 }

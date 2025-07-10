@@ -81,13 +81,18 @@ func ObtenerMarco(pid int, pagina int) (int, error) {
 		return marco, nil
 	}
 
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - TLB MISS - Pagina: %d", pid, pagina))
+	if globalsCpu.CpuConfig.TlbEntries != 0 {
+		clientUtils.Logger.Info(fmt.Sprintf("PID: %d - TLB MISS - Pagina: %d", pid, pagina))
+	}
 
 	marco, err := ObtenerMarcoMultinivel(pid, pagina, globalsCpu.Memoria.NivelesPaginacion, globalsCpu.Memoria.CantidadEntradas)
 	if err != nil {
 		return -1, err
 	}
 
-	tlbUtils.AgregarATLB(pid, pagina, marco)
+	if globalsCpu.CpuConfig.TlbEntries != 0 {
+		tlbUtils.AgregarATLB(pid, pagina, marco)
+	}
+
 	return marco, nil
 }
