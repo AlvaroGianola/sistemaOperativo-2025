@@ -379,7 +379,7 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 		}
 	}
 
-	marco, err := mmuUtils.ObtenerMarco(pid, pagina)
+	marco, err := mmuUtils.ObtenerMarco(pid, direccionLogica)
 	if err != nil {
 		clientUtils.Logger.Error(fmt.Sprintf("READ - Error al obtener marco: %s", err))
 		return
@@ -428,7 +428,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		}
 	}
 
-	marco, err := mmuUtils.ObtenerMarco(pid, pagina)
+	marco, err := mmuUtils.ObtenerMarco(pid, direccionLogica)
 	if err != nil {
 		clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al obtener marco: %s", err))
 		return
@@ -437,7 +437,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 	//Log
 	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", globalsCpu.ProcesoActual.Pid, pagina, marco))
 
-	consultaWrite(pid, marco, []byte(dato), direccionLogica)
+	consultaWrite(pid, marco, direccionLogica, []byte(dato))
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		// Agregar a la caché
@@ -450,30 +450,37 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 
 }
 
-func consultaWrite(pid int, marco int, dato []byte, direccionLogica int) {
-	// Armar paquete y enviar
+func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error {
+	for i := 0; i < len(datos); i++ {
+		desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica + i)
 
-	desplazamientoInicial := mmuUtils.ObtenerDesplazamiento(direccionLogica)
+		if desplazamiento+i > globalsCpu.Memoria.TamanioPagina {
+			clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error: el desplazamiento %d está fuera del rango de la página", desplazamiento+i))
+			return fmt.Errorf("desplazamiento fuera de rango")
+		}
 
-	for i := 0; i < len(dato); i++ {
-		direccionFisica := marco*globalsCpu.Memoria.TamanioPagina + desplazamientoInicial + i
+		direccionFisica := marco*globalsCpu.Memoria.TamanioPagina + desplazamiento
+		valor := strconv.Itoa(int(datos[i]))
 
 		valores := []string{
 			strconv.Itoa(pid),
 			strconv.Itoa(direccionFisica),
-			strconv.Itoa(int(dato[i])),
+			valor,
 		}
 
 		paquete := clientUtils.Paquete{Valores: valores}
 
-		clientUtils.GenerarYEnviarPaquete(
-			paquete.Valores,
+		clientUtils.EnviarPaquete(
 			globalsCpu.CpuConfig.IpMemory,
 			globalsCpu.CpuConfig.PortMemory,
 			"writeMemoria",
+			paquete,
 		)
+
+		time.Sleep(time.Millisecond * time.Duration(globalsCpu.CpuConfig.CacheDelay))
 	}
 
+	return nil
 }
 
 func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte, error) {
@@ -482,8 +489,9 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 	for i := 0; i < tamanio; i++ {
 		desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica + i)
 
-		if desplazamiento >= globalsCpu.Memoria.TamanioPagina {
-			return nil, fmt.Errorf("desplazamiento fuera de rango: %d", desplazamiento)
+		if desplazamiento+i > globalsCpu.Memoria.TamanioPagina {
+			clientUtils.Logger.Error(fmt.Sprintf("READ - Error: el desplazamiento %d está fuera del rango de la página", desplazamiento+i))
+			return nil, fmt.Errorf("desplazamiento fuera de rango")
 		}
 
 		direccionFisica := marco*globalsCpu.Memoria.TamanioPagina + desplazamiento
@@ -501,12 +509,11 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 			paquete,
 		)
 
-		if respuesta == nil || len(respuesta) == 0 {
-			clientUtils.Logger.Error(fmt.Sprintf("No se recibió respuesta válida de memoria para PID %d Dirección Física %d", pid, direccionFisica))
-			return nil, fmt.Errorf("respuesta inválida de memoria")
+		if len(respuesta) == 0 {
+			clientUtils.Logger.Error(fmt.Sprintf("READ - No se recibió respuesta de Memoria. pid=%d, direccionFisica=%d", pid, direccionFisica))
+			return nil, fmt.Errorf("no se recibió respuesta de memoria")
 		}
 
-		// Aquí tomo el primer byte directamente
 		contenido[i] = respuesta[0]
 	}
 

@@ -210,6 +210,7 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para acceder a un marco de usuario recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
+	clientUtils.Logger.Debug("Los valores recibidos en accederMarcoUsuario", "valores: ", pedido.Valores)
 
 	if len(pedido.Valores) < 3 {
 		clientUtils.Logger.Error("Error: paquete con cantidad insuficiente de valores")
@@ -219,6 +220,7 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 
 	// Parsear PID
 	pid, err := strconv.Atoi(pedido.Valores[0])
+	clientUtils.Logger.Debug("PID recibido", "pid", pid)
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear PID", "valor", pedido.Valores[0])
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -237,10 +239,12 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 		clientUtils.Logger.Info("Entrada de tabla recibida", "nivel", i, "valor", valor)
 		movimientos = append(movimientos, valor)
 	}
+	clientUtils.Logger.Debug("Movimientos: ", "movimientos", movimientos)
 
 	// Parsear desplazamiento (último valor)
 	desplazamientoStr := pedido.Valores[len(pedido.Valores)-1]
 	desplazamiento, err := strconv.Atoi(desplazamientoStr)
+	clientUtils.Logger.Debug("Desplazamiento: ", "desplazamiento", desplazamiento)
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear desplazamiento", "valor", desplazamientoStr)
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -292,6 +296,8 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para leer una página recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
+
+	clientUtils.Logger.Debug("Los valores recibidos en leerPagina", "valores: ", pedido.Valores)
 
 	pid, err := strconv.Atoi(pedido.Valores[0])
 	if err != nil {
@@ -353,6 +359,7 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para escribir una página recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
+	clientUtils.Logger.Debug("Los valores recibidos en escribirPagina", "valores: ", pedido.Valores)
 	pid, err := strconv.Atoi(pedido.Valores[0])
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear PID")
@@ -410,6 +417,8 @@ func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 
+	clientUtils.Logger.Debug("Los valores recibidos en leerDireccionFisica", "valores: ", pedido.Valores)
+
 	pid, err := strconv.Atoi(pedido.Valores[0])
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear PID")
@@ -441,6 +450,8 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para escribir dirección física recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
+
+	clientUtils.Logger.Debug("Los valores recibidos en escribirDireccionFisica", "valores: ", pedido.Valores)
 
 	pid, err := strconv.Atoi(pedido.Valores[0])
 	if err != nil {
