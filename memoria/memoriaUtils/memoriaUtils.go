@@ -558,6 +558,7 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 
 	//mutex de tablaswap
 	globalsMemoria.MutexTablaSwap.Lock()
+	defer globalsMemoria.MutexTablaSwap.Unlock()
 	globalsMemoria.TablaSwap[pid] = append(globalsMemoria.TablaSwap[pid], globalsMemoria.ProcesoEnSwap{
 
 		Pid:    pid,
@@ -591,15 +592,19 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proceso := buscarProceso(pid)
+	clientUtils.Logger.Debug("Proceso para desuspender encontrado", "pid", pid)
 	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
 		return
 	}
-
+	clientUtils.Logger.Debug("antes del mutex de TablaSwap", "pid", pid)
 	globalsMemoria.MutexTablaSwap.Lock()
 	entradas, ok := globalsMemoria.TablaSwap[pid]
+	clientUtils.Logger.Debug("dentro del mutex de TablaSwap", "pid", pid)
 	globalsMemoria.MutexTablaSwap.Unlock()
+	clientUtils.Logger.Debug("TablaSwap desbloqueada", "pid", pid)
+	clientUtils.Logger.Debug("Entradas de swap encontradas", "pid", pid, "entradas", len(entradas))
 
 	if !ok {
 		http.Error(w, "PID no encontrado en TablaSwap", http.StatusNotFound)
@@ -611,10 +616,12 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error al abrir swapfile", http.StatusInternalServerError)
 		return
 	}
+	clientUtils.Logger.Debug("Swapfile abierto", "path", globalsMemoria.MemoriaConfig.SwapfilePath)
 	defer swapFile.Close()
 
 	for numeroPagina, entrada := range entradas {
 		pagina := make([]byte, globalsMemoria.MemoriaConfig.PageSize)
+		clientUtils.Logger.Debug("Leyendo pagina del swapfile", "pid", pid, "numeroPagina", numeroPagina, "offset", entrada.Offset)
 
 		_, err := swapFile.ReadAt(pagina, entrada.Offset)
 		if err != nil {
@@ -627,6 +634,7 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error al reasignar memoria", http.StatusInternalServerError)
 			return
 		}
+
 	}
 
 	proceso.Metricas.SubidasAMemoria++
@@ -647,45 +655,48 @@ func reAsignarMemoria(pid int, contenidoPagina []byte, numeroPagina int) bool {
 		return false
 	}
 	// Si hay concurrencia en ProcesosEnMemoria, deberías protegerlo con mutex.
+	clientUtils.Logger.Debug("Espacio libre disponible", "espacio", EspacioLibre())
 
-	globalsMemoria.MutexProcesos.Lock()
-
+	clientUtils.Logger.Debug("Mutex de procesos bloqueado", "pid", pid)
 	proceso := buscarProceso(pid)
 	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
-		globalsMemoria.MutexProcesos.Unlock()
+
 		return false
 	}
-	globalsMemoria.MutexBitmapMarcosLibres.Lock()
+	clientUtils.Logger.Debug("Proceso encontrado", "pid", pid, "tamaño", proceso.Size)
+
+	clientUtils.Logger.Debug("Mutex de bitmap de marcos libres bloqueado", "pid", pid)
 	marcoLibre := buscarMarcoLibre()
 	if marcoLibre == -1 {
 		clientUtils.Logger.Error("No se encontró un marco libre para reasignar memoria", "pid", pid)
-		globalsMemoria.MutexProcesos.Unlock()
-		globalsMemoria.MutexBitmapMarcosLibres.Unlock()
+
 		return false
 	}
+	clientUtils.Logger.Debug("Marco libre encontrado", "marcoLibre", marcoLibre)
 
 	// Escribe el marco libre con el contenido de la pagina
 	copy(globalsMemoria.MemoriaUsuario[marcoLibre*globalsMemoria.MemoriaConfig.PageSize:], contenidoPagina)
+	clientUtils.Logger.Debug("Contenido de la página escrito en memoria", "marcoLibre", marcoLibre, "tamaño", len(contenidoPagina))
 
 	// Reescribir el marco de memoria a la entrada de la ultima tabla mutinivel y marcarlo como válido, presente y modificado
 	if len(proceso.TablaPaginasGlobal.Entradas) == 0 {
 		clientUtils.Logger.Error("Tabla de páginas del proceso está vacía, no se puede reasignar memoria", "pid", pid)
-		globalsMemoria.MutexProcesos.Unlock()
-		globalsMemoria.MutexBitmapMarcosLibres.Unlock()
+
 		return false
 	}
 
 	//ahora tengo que buscar en base a la pagina espeficifica que tengo dentro de las tablas y reasignale el marco y los bits
 	//aca deberia hacer el calculo raro para saber a que entrada de cada tabla tengo que entrar para poder modificar la ultima
 	reasignarPaginaEnJerarquia(pid, numeroPagina, marcoLibre)
-	globalsMemoria.MutexProcesos.Unlock()
+	clientUtils.Logger.Debug("Página reasignada en jerarquía", "pid", pid, "numeroPagina", numeroPagina, "marcoLibre", marcoLibre)
+
 	globalsMemoria.BitmapMarcosLibres[marcoLibre] = false // Marcar el marco como ocupado
-	globalsMemoria.MutexBitmapMarcosLibres.Unlock()
 
 	//  limpiar la entradas swap
 	globalsMemoria.MutexTablaSwap.Lock()
 	delete(globalsMemoria.TablaSwap, pid)
+	clientUtils.Logger.Debug("Tabla de swap limpiada para el proceso", "pid", pid)
 	globalsMemoria.MutexTablaSwap.Unlock()
 	return true
 }
@@ -824,6 +835,7 @@ func buscarProceso(pid int) *globalsMemoria.Proceso {
 func countMarcosLibres() int {
 	clientUtils.Logger.Info("Contando marcos libres")
 	globalsMemoria.MutexContadorMarcosLibres.Lock()
+	clientUtils.Logger.Debug("Paso el lock mutexContadorMarcosLibres")
 	defer globalsMemoria.MutexContadorMarcosLibres.Unlock()
 
 	count := 0
