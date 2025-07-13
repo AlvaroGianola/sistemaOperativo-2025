@@ -113,7 +113,7 @@ func IniciarProceso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errInterno := !asignarMemoria(pid, listaInstrucciones)
+	errInterno := !asignarMemoria(pid, listaInstrucciones, size)
 	if errInterno {
 		clientUtils.Logger.Error("Error al asignar memoria:", "error", errInterno)
 		http.Error(w, "Error al asignar memoria", http.StatusInternalServerError)
@@ -847,8 +847,8 @@ func countMarcosLibres() int {
 	return count
 }
 
-func asignarMemoria(pid int, instrucciones []string) bool {
-	clientUtils.Logger.Info("Asignando memoria al proceso", "pid", pid, "tamaño", len(instrucciones))
+func asignarMemoria(pid int, instrucciones []string, size int) bool {
+	clientUtils.Logger.Info("Asignando memoria al proceso", "pid", pid, "tamaño", size)
 	pageSize := globalsMemoria.MemoriaConfig.PageSize
 	numLevels := globalsMemoria.MemoriaConfig.NumberOfLevels
 
@@ -868,11 +868,11 @@ func asignarMemoria(pid int, instrucciones []string) bool {
 
 	proceso := &globalsMemoria.ProcesosEnMemoria[pid]
 	proceso.Pid = pid
-	proceso.Size = len(instrucciones)
+	proceso.Size = size
 	proceso.Instrucciones = instrucciones
 	proceso.TablaPaginasGlobal = globalsMemoria.NewTablaPaginas(1)
 
-	totalPaginas := (len(instrucciones) + pageSize - 1) / pageSize
+	totalPaginas := (size + pageSize - 1) / pageSize
 	marcosAsignados := []int{}
 
 	for i := 0; i < totalPaginas; i++ {
@@ -886,7 +886,7 @@ func asignarMemoria(pid int, instrucciones []string) bool {
 		pagina := globalsMemoria.NewPagina(marco, true, true, true)
 
 		inicio := i * pageSize
-		fin := min((i+1)*pageSize, len(instrucciones))
+		fin := min((i+1)*pageSize, size)
 
 		for j := inicio; j < fin; j++ {
 			direccionFisica := marco*pageSize + (j - inicio)
