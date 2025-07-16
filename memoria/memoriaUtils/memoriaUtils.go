@@ -533,11 +533,13 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	}
 
 	paginas := leerPaginasDeTabla(&proceso.TablaPaginasGlobal, 1)
-	if len(paginas) == 0 {
+
+	/*if len(paginas) == 0 {
 		clientUtils.Logger.Error("No se encontraron páginas para swappear:", "pid", pid)
 		http.Error(w, "No se encontraron páginas para swappear", http.StatusNotFound)
 		return
-	}
+	}*/
+
 	//leer la tabla de paginas y escribir en el swapfile
 	swapFile, err := os.OpenFile(globalsMemoria.MemoriaConfig.SwapfilePath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
@@ -618,6 +620,13 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	}
 	clientUtils.Logger.Debug("Swapfile abierto", "path", globalsMemoria.MemoriaConfig.SwapfilePath)
 	defer swapFile.Close()
+
+	if len(entradas) == 0 {
+		if !reAsignarMemoria(pid, make([]byte, globalsMemoria.MemoriaConfig.PageSize), 0) {
+			http.Error(w, "Error al reasignar memoria", http.StatusInternalServerError)
+			return
+		}
+	}
 
 	for numeroPagina, entrada := range entradas {
 		pagina := make([]byte, globalsMemoria.MemoriaConfig.PageSize)
