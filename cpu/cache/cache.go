@@ -107,11 +107,14 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 	if len(globalsCpu.Cache) < globalsCpu.CpuConfig.CacheEntries {
 		globalsCpu.Cache = append(globalsCpu.Cache, entrada)
 		clientUtils.Logger.Info(fmt.Sprintf("Cache Add - PID %d Página %d", pid, pagina))
+		clientUtils.Logger.Debug("valores recibidos en agregar a cache", "desplazamiento", desplazamiento, "tamanioPagina", tamPagina, "longitudDato", len(dato))
 
 		if sePasa {
+			clientUtils.Logger.Debug("Se paso")
 			nuevaDireccion := direccionLogica + bytesACopiar
 			AgregarACache(pid, nuevaDireccion, restante)
 		}
+		clientUtils.Logger.Debug("Salio del if")
 		return
 	}
 
@@ -146,6 +149,7 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 	}
 }
 
+// TODO: Bit modificado (si esta en 1 escribo sino no)
 func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 	evictada := globalsCpu.Cache[indice]
 
