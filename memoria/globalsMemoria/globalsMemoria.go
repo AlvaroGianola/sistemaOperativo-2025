@@ -109,17 +109,15 @@ var MemoriaUsuario []byte
 
 var BitmapMarcosLibres []bool
 
-var ProcesosEnMemoria []Proceso
+var ProcesosEnMemoria []*Proceso
 
 type ProcesoEnSwap struct {
-
 	Pid    int
 	Size   int
 	Offset int64
-
 }
 
-var TablaSwap = make(map[int][]ProcesoEnSwap) // PID -> lista de procesos swap-eados
+var TablaSwap = make(map[int]ProcesoEnSwap) // PID -> lista de procesos swap-eados
 
 var MutexTablaSwap sync.Mutex
 
