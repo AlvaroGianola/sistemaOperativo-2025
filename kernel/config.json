@@ -4,10 +4,10 @@
     "ip_kernel": "127.0.0.1",
     "port_kernel": 8001,
     "scheduler_algorithm": "FIFO",
-    "ready_ingress_algorithm": "PMCP",
+    "ready_ingress_algorithm": "FIFO",
     "alpha": 1,
     "initial_estimate": 10000,
-    "suspension_time": 3000,
+    "suspension_time": 1000,
     "log_level": "INFO"
 }
 

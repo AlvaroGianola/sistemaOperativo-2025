@@ -34,6 +34,7 @@ func main() {
 	mux.HandleFunc("/writePagina", memoriaUtils.EscribirPagina)
 	mux.HandleFunc("/writeMemoria", memoriaUtils.EscribirDireccionFisica)
 	mux.HandleFunc("/readMemoria", memoriaUtils.LeerDireccionFisica)
+	mux.HandleFunc("/memoryDump", memoriaUtils.DumpMemoria)
 
 	// Levanta el servidor en el puerto definido por configuración
 	direccion := fmt.Sprintf("%s:%d", globalsMemoria.MemoriaConfig.IpMemory, globalsMemoria.MemoriaConfig.PortMemory)

@@ -24,8 +24,9 @@ func main() {
 	}
 	ioUtils.Nombre = os.Args[1]
 
+	dir := ioUtils.GenerarNombreUnico(ioUtils.Nombre, ".log")
 	// Inicializa el logger
-	clientUtils.ConfigurarLogger("io" + ioUtils.Nombre + ".log")
+	clientUtils.ConfigurarLogger(dir)
 
 	// Encuentra un puerto libre y listener ya abierto
 	listener, puertoLibre, err := clientUtils.EncontrarPuertoDisponible(ioGlobalUtils.IoConfig.IPIo, ioGlobalUtils.IoConfig.PortIO)

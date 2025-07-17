@@ -558,10 +558,6 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 
 	// Leer contenido real de las páginas del proceso
 	paginas := leerPaginasDeTabla(&proceso.TablaPaginasGlobal, 1)
-	if len(paginas) == 0 {
-		http.Error(w, "Proceso no tiene páginas asignadas", http.StatusInternalServerError)
-		return
-	}
 
 	swapFile, err := os.OpenFile(globalsMemoria.MemoriaConfig.SwapfilePath, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {

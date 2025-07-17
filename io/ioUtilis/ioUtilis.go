@@ -80,3 +80,18 @@ func AvisarDesconexion() {
 	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, endpoint)
 	clientUtils.Logger.Info(fmt.Sprintf("[IO] Dispositivo %s notifica su cierre al Kernel", Nombre))
 }
+
+func GenerarNombreUnico(baseName string, ext string) string {
+	nombre := baseName + ext
+	contador := 1
+
+	for {
+		if _, err := os.Stat(nombre); os.IsNotExist(err) {
+			break
+		}
+		nombre = fmt.Sprintf("%s%d%s", baseName, contador, ext)
+		contador++
+	}
+
+	return nombre
+}
