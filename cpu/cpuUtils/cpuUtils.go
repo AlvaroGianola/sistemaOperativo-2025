@@ -12,7 +12,6 @@ import (
 
 	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
-	globalscpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	mmuUtils "github.com/sisoputnfrba/tp-golang/cpu/mmu"
 	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
@@ -102,7 +101,7 @@ func ObtenerInfoMemoria() {
 	clientUtils.Logger.Info("Informacion de memoria obtenida correctamente",
 		"Tamaño página", globalsCpu.Memoria.TamanioPagina,
 		"Niveles", globalsCpu.Memoria.NivelesPaginacion,
-		"Entradas por tabla", globalscpu.Memoria.CantidadEntradas,
+		"Entradas por tabla", globalsCpu.Memoria.CantidadEntradas,
 	)
 }
 
@@ -425,6 +424,8 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 			}
 		} else {
 			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d → Cache MISS", pid, pagina))
+			cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato))
+			return
 		}
 	}
 
@@ -453,6 +454,28 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error {
 	pageSize := globalsCpu.Memoria.TamanioPagina
 	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
+
+	if len(datos) == 1 {
+		valores := []string{
+			strconv.Itoa(pid),
+			strconv.Itoa(marco*pageSize + desplazamiento),
+			strconv.Itoa(int(datos[0])),
+		}
+		paquete := clientUtils.Paquete{Valores: valores}
+
+		respuesta := clientUtils.EnviarPaqueteConRespuestaBody(
+			globalsCpu.CpuConfig.IpMemory,
+			globalsCpu.CpuConfig.PortMemory,
+			"writeMemoria",
+			paquete,
+		)
+
+		if respuesta == nil {
+			return fmt.Errorf("error al escribir valor en memoria")
+		}
+
+		return nil
+	}
 
 	if desplazamiento+len(datos) > pageSize {
 		return fmt.Errorf("datos a escribir exceden tamaño de página")
@@ -503,6 +526,27 @@ func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error 
 
 func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte, error) {
 	pageSize := globalsCpu.Memoria.TamanioPagina
+	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
+
+	if tamanio == 1 {
+		valores := []string{
+			strconv.Itoa(pid),
+			strconv.Itoa(marco*pageSize + desplazamiento),
+		}
+		paquete := clientUtils.Paquete{Valores: valores}
+
+		respuesta := clientUtils.EnviarPaqueteConRespuestaBody(
+			globalsCpu.CpuConfig.IpMemory,
+			globalsCpu.CpuConfig.PortMemory,
+			"readMemoria",
+			paquete,
+		)
+
+		if respuesta == nil {
+			return nil, fmt.Errorf("Valor recibido nulo")
+		}
+		return respuesta, nil
+	}
 
 	// Armar paquete para leer página completa
 	valores := []string{
@@ -525,7 +569,6 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 	}
 
 	// Luego, retornar sólo los bytes solicitados (con desplazamiento)
-	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
 	if desplazamiento+tamanio > pageSize {
 		return nil, fmt.Errorf("rango de lectura excede tamaño de página")
 	}

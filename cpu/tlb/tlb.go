@@ -26,9 +26,11 @@ func AgregarATLB(pid int, pagina int, marco int) {
 	switch globalsCpu.CpuConfig.TlbReplacement {
 	case "FIFO":
 		indice := BuscarEntradaMasVieja()
+		clientUtils.Logger.Debug("Se reemplazo la tlb: ", "TLB: ", globalsCpu.Tlb[indice])
 		globalsCpu.Tlb[indice] = entrada
 	case "LRU":
 		indice := BuscarEntradaMenosUsada()
+		clientUtils.Logger.Debug("Se reemplazo la tlb: ", "TLB: ", globalsCpu.Tlb[indice])
 		globalsCpu.Tlb[indice] = entrada
 	}
 	clientUtils.Logger.Info("TLB Replace", "PID", pid, "Página", pagina, "Marco", marco)
@@ -59,8 +61,9 @@ func ConsultarMarco(pagina int) (int, bool) {
 		return -1, false
 	}
 
-	for _, entrada := range globalsCpu.Tlb {
+	for i, entrada := range globalsCpu.Tlb {
 		if entrada.Pagina == pagina {
+			globalsCpu.Tlb[i].UltimoUso = time.Now()
 			return entrada.Marco, true
 		}
 	}
