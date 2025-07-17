@@ -629,17 +629,17 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for numeroPagina, entrada := range entradas {
-		pagina := make([]byte, globalsMemoria.MemoriaConfig.PageSize)
+		pagina := strconv.Itoa(proceso.Size)
 		clientUtils.Logger.Debug("Leyendo pagina del swapfile", "pid", pid, "numeroPagina", numeroPagina, "offset", entrada.Offset)
 
-		_, err := swapFile.ReadAt(pagina, entrada.Offset)
+		_, err := swapFile.ReadAt([]byte(pagina), entrada.Offset)
 		if err != nil {
 			clientUtils.Logger.Error("Error al leer swapfile:", "error", err)
 			http.Error(w, "Error al leer swapfile", http.StatusInternalServerError)
 			return
 		}
 
-		if !reAsignarMemoria(pid, pagina, numeroPagina) {
+		if !reAsignarMemoria(pid, []byte(pagina), numeroPagina) {
 			http.Error(w, "Error al reasignar memoria", http.StatusInternalServerError)
 			return
 		}
@@ -679,7 +679,6 @@ func reAsignarMemoria(pid int, contenidoPagina []byte, numeroPagina int) bool {
 	marcoLibre := buscarMarcoLibre()
 	if marcoLibre == -1 {
 		clientUtils.Logger.Error("No se encontró un marco libre para reasignar memoria", "pid", pid)
-
 		return false
 	}
 	clientUtils.Logger.Debug("Marco libre encontrado", "marcoLibre", marcoLibre)
@@ -691,7 +690,6 @@ func reAsignarMemoria(pid int, contenidoPagina []byte, numeroPagina int) bool {
 	// Reescribir el marco de memoria a la entrada de la ultima tabla mutinivel y marcarlo como válido, presente y modificado
 	if len(proceso.TablaPaginasGlobal.Entradas) == 0 {
 		clientUtils.Logger.Error("Tabla de páginas del proceso está vacía, no se puede reasignar memoria", "pid", pid)
-
 		return false
 	}
 
