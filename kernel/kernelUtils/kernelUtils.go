@@ -583,8 +583,8 @@ func (f FIFOEstrategy) manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo) {
 		}
 		proximoProceso := plp.newState.VizualizarProximo()
 		if plp.EnviarPedidoMemoria(proximoProceso) {
-			plp.EnviarProcesoAReady(proximoProceso)
 			plp.newState.SacarProximoProceso()
+			go plp.EnviarProcesoAReady(proximoProceso)
 			f.manejarLiberacionDeProceso(plp)
 		}
 	}
@@ -611,16 +611,8 @@ func (p PMCPEstrategy) manejarLiberacionDeProceso(plp *PlanificadorLargoPlazo) {
 		}
 		proximoProceso := plp.newState.VizualizarProximo()
 		if plp.EnviarPedidoMemoria(proximoProceso) {
-			plp.EnviarProcesoAReady(proximoProceso)
 			plp.newState.SacarProximoProceso()
-			p.manejarLiberacionDeProceso(plp)
-		}
-	} else {
-		Pmp.suspReadyState.OrdenarPorPMC()
-		proximoProceso := Pmp.suspReadyState.VizualizarProximo()
-		if Pmp.EnviarDesSuspensionPedidoMemoria(proximoProceso) {
-			Pmp.EnviarProcesoAReady(proximoProceso)
-			Pmp.suspReadyState.SacarProximoProceso()
+			go plp.EnviarProcesoAReady(proximoProceso)
 			p.manejarLiberacionDeProceso(plp)
 		}
 	}
@@ -903,8 +895,8 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso *PCB) {
 	} else if cpusLibres.Vacia() {
 		go pcp.schedulerEstrategy.intentarDesalojo(pcp, proceso)
 	}
-
 	sem_cpusLibres <- 0
+
 	pcp.schedulerEstrategy.selecionarProximoAEjecutar(pcp)
 }
 
@@ -957,11 +949,13 @@ func (f SuspFIFOEstrategy) manejarIngresoDeProceso(proceso *PCB, pmp *Planificad
 }
 
 func (f SuspFIFOEstrategy) manejarLiberacionDeProceso(pmp *PlanificadorMedianoPlazo) {
-
+	if Pmp.suspReadyState.Vacia() {
+		return
+	}
 	proximoProceso := Pmp.suspReadyState.VizualizarProximo()
 	if Pmp.EnviarDesSuspensionPedidoMemoria(proximoProceso) {
-		Pmp.EnviarProcesoAReady(proximoProceso)
 		Pmp.suspReadyState.SacarProximoProceso()
+		go Pmp.EnviarProcesoAReady(proximoProceso)
 		f.manejarLiberacionDeProceso(pmp)
 	}
 }
@@ -980,11 +974,14 @@ func (p SuspPMCPEstrategy) manejarIngresoDeProceso(proceso *PCB, pmp *Planificad
 }
 
 func (p SuspPMCPEstrategy) manejarLiberacionDeProceso(pmp *PlanificadorMedianoPlazo) {
+	if Pmp.suspReadyState.Vacia() {
+		return
+	}
 	Pmp.suspReadyState.OrdenarPorPMC()
 	proximoProceso := Pmp.suspReadyState.VizualizarProximo()
 	if Pmp.EnviarDesSuspensionPedidoMemoria(proximoProceso) {
-		Pmp.EnviarProcesoAReady(proximoProceso)
 		Pmp.suspReadyState.SacarProximoProceso()
+		go Pmp.EnviarProcesoAReady(proximoProceso)
 		p.manejarLiberacionDeProceso(pmp)
 	}
 }
@@ -1147,7 +1144,7 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: EXIT", proceso.PID))
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Estaba ejecutando en %s", proceso.PID, cpu.Identificador))
-		Plp.FinalizarProceso(proceso)
+		go Plp.FinalizarProceso(proceso)
 
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Estoy por liberar CPU: %s", proceso.PID, cpu.Identificador))
 		cpusLibres.Agregar(*cpusOcupadas.SacarPorID(cpu.Identificador))
