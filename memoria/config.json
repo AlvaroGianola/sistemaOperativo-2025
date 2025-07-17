@@ -8,11 +8,11 @@
    "entries_per_page": 4,
    "number_of_levels": 3,
    "memory_delay": 500,
-   "swapfile_path": "/home/utnso/scripts/swapfile.bin",
+   "swapfile_path": "/home/federico/Descargas/swapfile.bin",
    "swap_delay": 5000,
    "log_level": "INFO",
-   "dump_path": "/home/utnso/scripts/",
-   "scripts_path": "/home/utnso/scripts/revenge-of-the-cth-pruebas/"
+   "dump_path": "/home/federico/Descargas/",
+   "scripts_path": "/home/federico/scripts/revenge-of-the-cth-pruebas/"
 }
 
 
