@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -108,11 +107,14 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 	if len(globalsCpu.Cache) < globalsCpu.CpuConfig.CacheEntries {
 		globalsCpu.Cache = append(globalsCpu.Cache, entrada)
 		clientUtils.Logger.Info(fmt.Sprintf("Cache Add - PID %d Página %d", pid, pagina))
+		clientUtils.Logger.Debug("valores recibidos en agregar a cache", "desplazamiento", desplazamiento, "tamanioPagina", tamPagina, "longitudDato", len(dato))
 
 		if sePasa {
+			clientUtils.Logger.Debug("Se paso")
 			nuevaDireccion := direccionLogica + bytesACopiar
 			AgregarACache(pid, nuevaDireccion, restante)
 		}
+		clientUtils.Logger.Debug("Salio del if")
 		return
 	}
 
@@ -147,20 +149,31 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 	}
 }
 
+// TODO: Bit modificado (si esta en 1 escribo sino no)
 func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 	evictada := globalsCpu.Cache[indice]
 
 	if evictada.Modificado {
 		clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - Página %d modificada → escribir en Memoria", evictada.Pagina))
 
-		contenidoBase64 := base64.StdEncoding.EncodeToString(evictada.Contenido)
+		// 🔍 Buscar marco real
+		marco, err := mmuUtils.ObtenerMarco(evictada.Pid, mmuUtils.ObtenerDireccionLogica(evictada.Pagina))
+		if err != nil {
+			clientUtils.Logger.Error(fmt.Sprintf("No se pudo obtener marco de la página %d del PID %d", evictada.Pagina, evictada.Pid))
+			return
+		}
+
+		// ✅ Construir paquete como espera Memoria
 		valores := []string{
 			strconv.Itoa(evictada.Pid),
-			strconv.Itoa(evictada.Pagina),
-			contenidoBase64,
+			strconv.Itoa(marco),
+			strconv.Itoa(len(evictada.Contenido)),
 		}
-		paquete := clientUtils.Paquete{Valores: valores}
+		for _, b := range evictada.Contenido {
+			valores = append(valores, strconv.Itoa(int(b)))
+		}
 
+		paquete := clientUtils.Paquete{Valores: valores}
 		clientUtils.EnviarPaquete(
 			globalsCpu.CpuConfig.IpMemory,
 			globalsCpu.CpuConfig.PortMemory,
@@ -168,7 +181,7 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 			paquete,
 		)
 
-		clientUtils.Logger.Info(fmt.Sprintf("Se envió contenido a Memoria: PID %d Página %d", evictada.Pid, evictada.Pagina))
+		clientUtils.Logger.Info(fmt.Sprintf("Se envió contenido a Memoria: PID %d Página %d Marco %d", evictada.Pid, evictada.Pagina, marco))
 	}
 
 	time.Sleep(time.Millisecond * time.Duration(globalsCpu.CpuConfig.CacheDelay))
@@ -176,47 +189,41 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 	globalsCpu.Cache[indice] = nueva
 	clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - PID %d Página %d → Nueva entrada", nueva.Pid, nueva.Pagina))
 }
+
 func FlushPaginasModificadas(pid int) {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
 
-	for j, entrada := range globalsCpu.Cache {
+	for _, entrada := range globalsCpu.Cache {
 		if entrada.Pid == pid && entrada.Modificado {
-			marco, err := mmuUtils.ObtenerMarco(entrada.Pid, entrada.Pagina)
+			marco, err := mmuUtils.ObtenerMarco(entrada.Pid, mmuUtils.ObtenerDireccionLogica(entrada.Pagina))
 			if err != nil {
 				clientUtils.Logger.Error(fmt.Sprintf("No se encontró el marco para la página %d del PID %d", entrada.Pagina, pid))
 				continue
 			}
 
-			// Enviar bit a bit el contenido
-			for i := 0; i < len(entrada.Contenido); i++ {
-				bit := string(entrada.Contenido[i])
-				if bit == string(byte(0)) {
-					continue
-				}
-				valores := []string{
-					strconv.Itoa(pid),
-					strconv.Itoa(marco + i),
-					bit,
-				}
-
-				// CACHE DELAY por bit
-				time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
-
-				paquete := clientUtils.Paquete{Valores: valores}
-				clientUtils.EnviarPaquete(
-					globalsCpu.CpuConfig.IpMemory,
-					globalsCpu.CpuConfig.PortMemory,
-					"writeMemoria",
-					paquete,
-				)
-				//Log
-				clientUtils.Logger.Info(fmt.Sprintf("[Flush] PID %d: página %d, marco %d, bit pos %d -> '%s' enviado", pid, entrada.Pagina, marco, i, bit))
+			valores := []string{
+				strconv.Itoa(pid),
+				strconv.Itoa(marco),
+				strconv.Itoa(len(entrada.Contenido)),
 			}
-			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Memory Update - Página: %d - Frame: %d", pid, j, marco))
+			for _, b := range entrada.Contenido {
+				valores = append(valores, strconv.Itoa(int(b)))
+			}
+
+			paquete := clientUtils.Paquete{Valores: valores}
+			clientUtils.EnviarPaquete(
+				globalsCpu.CpuConfig.IpMemory,
+				globalsCpu.CpuConfig.PortMemory,
+				"writePagina",
+				paquete,
+			)
+
+			clientUtils.Logger.Info(fmt.Sprintf("[Flush] PID %d: Página %d → Marco %d guardada en Memoria", pid, entrada.Pagina, marco))
 		}
 	}
 }
+
 func LimpiarCache() {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
