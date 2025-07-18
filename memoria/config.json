@@ -3,17 +3,20 @@
 {
    "port_memory": 8002,
    "ip_memory": "127.0.0.1",
-   "memory_size": 4096,
+   "memory_size": 512,
    "page_size": 32,
-   "entries_per_page": 8,
-   "number_of_levels": 3,
-   "memory_delay": 100,
-    "swapfile_path": "/home/valentin/Descargas/swapfile.bin",
+   "entries_per_page": 32,
+   "number_of_levels": 1,
+   "memory_delay": 500,
+    "swapfile_path": "/home/federico/Descargas/swapfile.bin",
     "swap_delay": 2500,
     "log_level": "INFO",
-    "dump_path": "/home/valentin/Descargas/",
-    "scripts_path": "/home/valentin/facultad/revenge-of-the-cth-pruebas/"
+    "dump_path": "/home/federico/Descargas/",
+    "scripts_path":  "/home/federico/scripts/revenge-of-the-cth-pruebas/"
 }
+
+
+
 
 
 
