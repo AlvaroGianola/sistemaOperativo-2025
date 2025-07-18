@@ -422,6 +422,7 @@ type PCB struct {
 	timeInCurrentState   time.Time
 	estimacion           float64
 	estaSiendoDesalojado atomic.Bool
+	pidioDesalojo        atomic.Bool
 }
 
 type PCBList struct {
@@ -440,14 +441,21 @@ func (p *PCBList) SacarProximoProceso() (*PCB, bool) {
 	defer p.mu.Unlock()
 
 	if len(p.elementos) == 0 {
-		var cero *PCB
-		return cero, false
+		return nil, false
 	}
-	primero := p.elementos[0]
-	p.elementos = p.elementos[1:]
-	return primero, true
-}
 
+	// Buscar el primero que NO pidió desalojo
+	for i, pcb := range p.elementos {
+		if !pcb.pidioDesalojo.Load() {
+			// Sacar este PCB de la lista
+			p.elementos = append(p.elementos[:i], p.elementos[i+1:]...)
+			return pcb, true
+		}
+	}
+
+	// Si todos pidieron desalojo, no hay ninguno disponible
+	return nil, false
+}
 func (p *PCBList) EliminarProcesoPorPID(pid uint) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -512,20 +520,30 @@ func (p *PCBList) SacarProcesoConMenorEstimacion() (*PCB, bool) {
 	defer p.mu.Unlock()
 
 	if len(p.elementos) == 0 {
-		var cero *PCB
-		return cero, false
+		return nil, false
 	}
 
-	minIndex := 0
-	minValor := p.elementos[0].estimacion
+	minIndex := -1
+	var minValor float64
 
-	for i := 1; i < len(p.elementos); i++ {
-		if p.elementos[i].estimacion < minValor {
+	// Buscar el índice del proceso con menor estimación que NO pidió desalojo
+	for i, pcb := range p.elementos {
+		if pcb.pidioDesalojo.Load() {
+			continue // saltar los que pidieron desalojo
+		}
+
+		if minIndex == -1 || pcb.estimacion < minValor {
 			minIndex = i
-			minValor = p.elementos[i].estimacion
+			minValor = pcb.estimacion
 		}
 	}
 
+	if minIndex == -1 {
+		// Todos pidieron desalojo
+		return nil, false
+	}
+
+	// Sacar el proceso encontrado
 	proceso := p.elementos[minIndex]
 	p.elementos = append(p.elementos[:minIndex], p.elementos[minIndex+1:]...)
 
@@ -819,6 +837,9 @@ type FIFOScheduler struct {
 }
 
 func (f FIFOScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
+	if pcp.readyState.Vacia() {
+		return
+	}
 	proximo, ok := pcp.readyState.SacarProximoProceso()
 	if ok {
 		proximo.MT.readyTime += proximo.timeInState()
@@ -833,6 +854,9 @@ type SJFScheduler struct {
 }
 
 func (s SJFScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
+	if pcp.readyState.Vacia() {
+		return
+	}
 	proximo, ok := pcp.readyState.SacarProcesoConMenorEstimacion()
 	if ok {
 		proximo.MT.readyTime += proximo.timeInState()
@@ -847,14 +871,14 @@ type SRTScheduler struct {
 }
 
 func (s SRTScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
+	if pcp.readyState.Vacia() {
+		return
+	}
 
 	proximo, ok := pcp.readyState.SacarProcesoConMenorEstimacion()
 	if ok {
 		proximo.MT.readyTime += proximo.timeInState()
 		pcp.ejecutar(proximo)
-	} else {
-		clientUtils.Logger.Error("Error al encontrar proximo a  ejecución")
-
 	}
 }
 
@@ -872,9 +896,15 @@ func (s SRTScheduler) intentarDesalojo(pcp *PlanificadorCortoPlazo, procesoNuevo
 			return
 		}
 		proceso.estaSiendoDesalojado.Store(true)
+		procesoNuevo.pidioDesalojo.Store(true)
 		go cpu.enviarInterrupcion("DESALOJO")
 		cpu.sem_interrupcionAtendida <- struct{}{}
-		procesoSelecionado, _ := pcp.readyState.BuscarYSacarPorPID(procesoNuevo.PID)
+		procesoSelecionado, ok := pcp.readyState.BuscarYSacarPorPID(procesoNuevo.PID)
+		if !ok {
+			clientUtils.Logger.Error(fmt.Sprintf("Error al encontrar el proceso PID %d en READY", procesoNuevo.PID))
+			return
+		}
+		procesoNuevo.pidioDesalojo.Store(false)
 		pcp.ejecutarConDesalojo(procesoSelecionado, cpu)
 	}
 }
@@ -893,7 +923,7 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso *PCB) {
 	if proceso.estaSiendoDesalojado.Load() {
 		proceso.estaSiendoDesalojado.Store(false)
 	} else if cpusLibres.Vacia() {
-		go pcp.schedulerEstrategy.intentarDesalojo(pcp, proceso)
+		pcp.schedulerEstrategy.intentarDesalojo(pcp, proceso)
 	}
 	sem_cpusLibres <- 0
 
@@ -1109,7 +1139,7 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	// saco el proceso de EXEC y acumulo cuanto tiempo estuvo ejecutando
 	proceso, ok := Plp.pcp.execState.BuscarYSacarPorPID(cpu.PIDenEjecucion)
 	if !ok {
-		clientUtils.Logger.Error(fmt.Sprintf("Error al encontrar el proceso en ejecucion PID:%d", cpu.PIDenEjecucion))
+		clientUtils.Logger.Error(fmt.Sprintf("Error al encontrar el proceso en ejecucion PID:%d, CPU: %s, PC: %s", cpu.PIDenEjecucion, cpu.Identificador, respuesta.Valores[PC]))
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -1233,11 +1263,8 @@ func manejarIo(respuesta serverUtils.Paquete, proceso *PCB) {
 		Plp.pcp.EnviarProcesoABlocked(proceso)
 		ioDesocupada, ok := grupoIo.ObtenerIoLibre()
 		if !ok {
-			clientUtils.Logger.Error("lo agregue a la cola de pedidos")
-
 			grupoIo.AgregarPedido(PedidoIo{PID: proceso.PID, time: time})
 		} else {
-			clientUtils.Logger.Error("llegie a mandar el pedido")
 			ioDesocupada.enviarProceso(proceso.PID, time)
 		}
 	} else {

@@ -178,7 +178,7 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		if !ok {
 
 			clientUtils.Logger.Error("Error al pedir la siguiente instruccion a memoria")
-			break
+			return
 		}
 		clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - FETCH - Program Counter: %d", globalsCpu.ProcesoActual.Pid, globalsCpu.ProcesoActual.Pc))
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", instruccion))
@@ -187,26 +187,20 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción decodificada: %s, con las variables %s", cod_op, variables))
 		//#EXECUTE
 		clientUtils.Logger.Info("## Ejecutando instrucción")
-		ExecuteInstruccion(proceso, cod_op, variables)
+		if !ExecuteInstruccion(proceso, cod_op, variables) {
+			if cod_op == EXIT {
+				clientUtils.Logger.Info("## Proceso finalizado")
+			}
+			return
+		}
 		//#CHECK
 		// le pregunto a kernel si hay una interrupción
 		clientUtils.Logger.Info("## Verificando interrupciones")
 		if globalsCpu.Interrupciones.ExisteInterrupcion {
 			clientUtils.Logger.Info("## Interrupcion recibida")
+			globalsCpu.Interrupciones.ExisteInterrupcion = false
 			EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, globalsCpu.Interrupciones.Motivo, nil)
-			break
-		}
-
-		// Si la instrucción es EXIT o INVALIDA, salimos del ciclo
-		if cod_op == EXIT {
-			clientUtils.Logger.Info("## Proceso finalizado")
-			break
-		} else if cod_op == IO || cod_op == INIT_PROC || cod_op == DUMP_MEMORY {
-			break
-		}
-		if cod_op == INVALID {
-			clientUtils.Logger.Error("## Instrucción inválida, abortando ejecución")
-			break
+			return
 		}
 
 	}
@@ -268,13 +262,14 @@ func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
 	return cod_op, variables
 }
 
-func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
+func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []string) bool {
 	clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - Ejecutando: %s - %s", globalsCpu.ProcesoActual.Pid, cod_op, variables))
 	switch cod_op {
 	case NOOP:
 		clientUtils.Logger.Info("## Ejecutando NOOP")
 		time.Sleep(2 * time.Second)
 		globalsCpu.ProcesoActual.Pc++
+		return true
 
 	case WRITE:
 		clientUtils.Logger.Info("## Ejecutando WRITE")
@@ -284,11 +279,12 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 
 		if err != nil {
 			clientUtils.Logger.Error("WRITE: argumento inválido, no es un número")
-			return
+			return false
 		}
 
 		writeMemoria(proceso.Pid, direccionInt, dato)
 		globalsCpu.ProcesoActual.Pc++
+		return true
 	case READ:
 		clientUtils.Logger.Info("## Ejecutando READ")
 		direccion := variables[0]
@@ -296,17 +292,18 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 		direccionInt, err := strconv.Atoi(direccion)
 		if err != nil {
 			clientUtils.Logger.Error("READ: argumento inválido, no es un número")
-			return
+			return false
 		}
 		tamanioInt, err := strconv.Atoi(tamanio)
 
 		if err != nil {
 			clientUtils.Logger.Error("READ: argumento inválido, no es un número")
-			return
+			return false
 		}
 
 		readMemoria(proceso.Pid, direccionInt, tamanioInt)
 		globalsCpu.ProcesoActual.Pc++
+		return true
 	case GOTO:
 		clientUtils.Logger.Info("## Ejecutando GOTO")
 		nuevoPC, err := strconv.Atoi(variables[0])
@@ -315,15 +312,15 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 			break
 		}
 		globalsCpu.ProcesoActual.Pc = nuevoPC
-
+		return true
+	case IO, INIT_PROC, DUMP_MEMORY, EXIT:
+		go Syscall(proceso, cod_op, variables)
+		return false // ← Esto evita volver al for
 	default:
-		if cod_op != IO && cod_op != INIT_PROC && cod_op != DUMP_MEMORY && cod_op != EXIT {
-			clientUtils.Logger.Error("## Instruccion no reconocida")
-		} else {
-			Syscall(proceso, cod_op, variables)
-		}
+		clientUtils.Logger.Error("## Instruccion no reconocida")
+		return false
 	}
-
+	return false
 }
 
 func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
@@ -333,22 +330,27 @@ func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
 		LimpiarProceso(globalsCpu.ProcesoActual.Pid)
 		globalsCpu.ProcesoActual.Pc++
 		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
+		return
 	case INIT_PROC:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar INIT_PROC")
 		LimpiarProceso(globalsCpu.ProcesoActual.Pid)
 		globalsCpu.ProcesoActual.Pc++
 		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
+		return
 	case DUMP_MEMORY:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar DUMP_MEMORY")
 		LimpiarProceso(globalsCpu.ProcesoActual.Pid)
 		globalsCpu.ProcesoActual.Pc++
 		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
+		return
 	case EXIT:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar EXIT")
 		LimpiarProceso(globalsCpu.ProcesoActual.Pid)
 		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
+		return
 	default:
 		clientUtils.Logger.Error("Error, instruccion no reconocida")
+		return
 	}
 }
 
