@@ -187,10 +187,12 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción decodificada: %s, con las variables %s", cod_op, variables))
 		//#EXECUTE
 		clientUtils.Logger.Info("## Ejecutando instrucción")
-		if !ExecuteInstruccion(proceso, cod_op, variables) {
+		cont := ExecuteInstruccion(proceso, cod_op, variables)
+		if !cont {
 			if cod_op == EXIT {
 				clientUtils.Logger.Info("## Proceso finalizado")
 			}
+			// salí SIEMPRE; no sigas chequeando interrupciones ni nada
 			return
 		}
 		//#CHECK
@@ -314,7 +316,7 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 		globalsCpu.ProcesoActual.Pc = nuevoPC
 		return true
 	case IO, INIT_PROC, DUMP_MEMORY, EXIT:
-		go Syscall(proceso, cod_op, variables)
+		Syscall(proceso, cod_op, variables)
 		return false // ← Esto evita volver al for
 	default:
 		clientUtils.Logger.Error("## Instruccion no reconocida")
