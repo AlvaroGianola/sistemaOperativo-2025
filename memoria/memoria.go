@@ -17,18 +17,14 @@ func main() {
 	// Carga la configuración desde el archivo config.json
 	globalsMemoria.MemoriaConfig = memoriaUtils.IniciarConfiguracion("config.json")
 
-	globalsMemoria.MemoriaUsuario = make([]byte, globalsMemoria.MemoriaConfig.MemorySize)
-	globalsMemoria.BitmapMarcosLibres = make([]bool, globalsMemoria.MemoriaConfig.MemorySize/globalsMemoria.MemoriaConfig.PageSize)
-	for i := range globalsMemoria.BitmapMarcosLibres {
-		globalsMemoria.BitmapMarcosLibres[i] = true
-	}
-
 	// Crea el multiplexer HTTP y registra los endpoints que usará Memoria
 	mux := http.NewServeMux()
 
 	// Endpoints que reciben peticiones desde Kernel
 	mux.HandleFunc("/iniciarProceso", memoriaUtils.IniciarProceso)
 	mux.HandleFunc("/finalizarProceso", memoriaUtils.FinalizarProceso)
+	mux.HandleFunc("/suspenderProceso", memoriaUtils.SuspenderProceso)
+	mux.HandleFunc("/desuspenderProceso", memoriaUtils.DesuspenderProceso)
 
 	// Endpoints que reciben peticiones desde CPU
 	mux.HandleFunc("/obtenerConfiguracionMemoria", memoriaUtils.ObtenerConfiguracionMemoria)
@@ -38,6 +34,7 @@ func main() {
 	mux.HandleFunc("/writePagina", memoriaUtils.EscribirPagina)
 	mux.HandleFunc("/writeMemoria", memoriaUtils.EscribirDireccionFisica)
 	mux.HandleFunc("/readMemoria", memoriaUtils.LeerDireccionFisica)
+	mux.HandleFunc("/memoryDump", memoriaUtils.DumpMemoria)
 
 	// Levanta el servidor en el puerto definido por configuración
 	direccion := fmt.Sprintf("%s:%d", globalsMemoria.MemoriaConfig.IpMemory, globalsMemoria.MemoriaConfig.PortMemory)

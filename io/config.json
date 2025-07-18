@@ -4,7 +4,7 @@
     "port_kernel": 8001,
     "port_io": 8003,
     "ip_io": "127.0.0.1",
-    "log_level": "DEBUG"
+    "log_level": "INFO"
 }
 
 

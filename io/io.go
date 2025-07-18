@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	ioGlobalUtils "github.com/sisoputnfrba/tp-golang/io/globalsIO"
@@ -23,8 +24,9 @@ func main() {
 	}
 	ioUtils.Nombre = os.Args[1]
 
+	dir := ioUtils.GenerarNombreUnico(ioUtils.Nombre, ".log")
 	// Inicializa el logger
-	clientUtils.ConfigurarLogger("io" + ioUtils.Nombre + ".log")
+	clientUtils.ConfigurarLogger(dir)
 
 	// Encuentra un puerto libre y listener ya abierto
 	listener, puertoLibre, err := clientUtils.EncontrarPuertoDisponible(ioGlobalUtils.IoConfig.IPIo, ioGlobalUtils.IoConfig.PortIO)
@@ -32,10 +34,9 @@ func main() {
 		panic(err)
 	}
 	fmt.Printf("[IO] Servidor iniciado en puerto %d para dispositivo %s\n", puertoLibre, ioUtils.Nombre)
-
 	// Handshake al Kernel
 	ioUtils.EnviarHandshakeAKernel(ioUtils.Nombre, puertoLibre)
-
+	ioUtils.Puerto = strconv.Itoa(puertoLibre)
 	// Registrar endpoint
 	mux := http.NewServeMux()
 	mux.HandleFunc("/recibirPeticion", ioUtils.RecibirPeticion)

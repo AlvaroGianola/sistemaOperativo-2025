@@ -1,15 +1,22 @@
+
+
 {
-    "port_memory": 8002,
-    "ip_memory": "127.0.0.1",
-    "memory_size": 4096,
-    "page_size": 64,
-    "entries_per_page": 4,
-    "number_of_levels": 5,
-    "memory_delay": 1500,
-    "swapfile_path": "/home/utnso/swapfile.bin",
-    "swap_delay": 15000,
-    "log_level": "DEBUG",
-    "dump_path": "/home/utnso/dump_files/",
-    "scripts_path": "/home/utnso/scripts/"
+   "port_memory": 8002,
+   "ip_memory": "127.0.0.1",
+   "memory_size": 512,
+   "page_size": 32,
+   "entries_per_page": 32,
+   "number_of_levels": 1,
+   "memory_delay": 500,
+    "swapfile_path": "/home/federico/Descargas/swapfile.bin",
+    "swap_delay": 2500,
+    "log_level": "INFO",
+    "dump_path": "/home/federico/Descargas/",
+    "scripts_path":  "/home/federico/scripts/revenge-of-the-cth-pruebas/"
 }
+
+
+
+
+
 

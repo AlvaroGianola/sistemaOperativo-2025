@@ -1,0 +1,19 @@
+[33m1956e53[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mdevelopment[m[33m, [m[1;31morigin/development[m[33m)[m HEAD@{0}: reset: moving to HEAD
+[33m1956e53[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mdevelopment[m[33m, [m[1;31morigin/development[m[33m)[m HEAD@{1}: checkout: moving from feat/memoria to development
+[33me0346f9[m[33m ([m[1;31morigin/feat/memoria[m[33m, [m[1;32mfeat/memoria[m[33m)[m HEAD@{2}: reset: moving to HEAD
+[33me0346f9[m[33m ([m[1;31morigin/feat/memoria[m[33m, [m[1;32mfeat/memoria[m[33m)[m HEAD@{3}: checkout: moving from development to feat/memoria
+[33m1956e53[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mdevelopment[m[33m, [m[1;31morigin/development[m[33m)[m HEAD@{4}: reset: moving to HEAD
+[33m1956e53[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mdevelopment[m[33m, [m[1;31morigin/development[m[33m)[m HEAD@{5}: pull: Fast-forward
+[33m3565643[m HEAD@{6}: reset: moving to HEAD
+[33m3565643[m HEAD@{7}: pull: Fast-forward
+[33m35125f9[m HEAD@{8}: commit: fix para build de memoria
+[33m4744066[m HEAD@{9}: pull: Fast-forward
+[33m65690e0[m HEAD@{10}: checkout: moving from feat/memoria to development
+[33me0346f9[m[33m ([m[1;31morigin/feat/memoria[m[33m, [m[1;32mfeat/memoria[m[33m)[m HEAD@{11}: commit: fix entriesPerPage no usado tiraba error
+[33m20c5715[m HEAD@{12}: commit: fixes
+[33m012290e[m HEAD@{13}: commit: leer y escribir en memoria fixes y misma logica pero para dirrecciones espacificas y no solo paginas completas
+[33m37c78dd[m HEAD@{14}: commit: leer y escribir en memoria
+[33m0ab9172[m HEAD@{15}: commit: AccederMarcoUsuario
+[33m3e28891[m HEAD@{16}: commit: estructuras de memoria, iniciarProceso respetando paginacion
+[33m9a65f24[m[33m ([m[1;33mtag: [m[1;33mcheckpoint-2[m[33m, [m[1;32mmain[m[33m)[m HEAD@{17}: checkout: moving from main to feat/memoria
+[33m9a65f24[m[33m ([m[1;33mtag: [m[1;33mcheckpoint-2[m[33m, [m[1;32mmain[m[33m)[m HEAD@{18}: clone: from github.com:sisoputnfrba/tp-2025-1c-LaBestiaDeCalchin.git

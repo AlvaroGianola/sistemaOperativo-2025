@@ -45,6 +45,8 @@ func ObtenerMarcoMultinivel(pid int, direccionLogica int, niveles int, entradasP
 
 	paquete := clientUtils.Paquete{Valores: valores}
 
+	clientUtils.Logger.Debug("Paquete a enviar en accederMarcoUsuario", "paquete", paquete)
+
 	resBytes := clientUtils.EnviarPaqueteConRespuestaBody(
 		globalsCpu.CpuConfig.IpMemory,
 		globalsCpu.CpuConfig.PortMemory,
@@ -70,9 +72,10 @@ func ObtenerMarcoMultinivel(pid int, direccionLogica int, niveles int, entradasP
 }
 
 // MMU: Traduce dirección lógica a marco físico, usando TLB + Memoria
-func ObtenerMarco(pid int, pagina int) (int, error) {
+func ObtenerMarco(pid int, direccionLogica int) (int, error) {
 	globalsCpu.TlbMutex.Lock()
 	defer globalsCpu.TlbMutex.Unlock()
+	pagina := ObtenerNumeroDePagina(direccionLogica)
 
 	marco, encuentraMarco := tlbUtils.ConsultarMarco(pagina) // Actualiza el último uso
 
@@ -81,13 +84,18 @@ func ObtenerMarco(pid int, pagina int) (int, error) {
 		return marco, nil
 	}
 
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - TLB MISS - Pagina: %d", pid, pagina))
+	if globalsCpu.CpuConfig.TlbEntries != 0 {
+		clientUtils.Logger.Info(fmt.Sprintf("PID: %d - TLB MISS - Pagina: %d", pid, pagina))
+	}
 
-	marco, err := ObtenerMarcoMultinivel(pid, pagina, globalsCpu.Memoria.NivelesPaginacion, globalsCpu.Memoria.CantidadEntradas)
+	marco, err := ObtenerMarcoMultinivel(pid, direccionLogica, globalsCpu.Memoria.NivelesPaginacion, globalsCpu.Memoria.CantidadEntradas)
 	if err != nil {
 		return -1, err
 	}
 
-	tlbUtils.AgregarATLB(pid, pagina, marco)
+	if globalsCpu.CpuConfig.TlbEntries != 0 {
+		tlbUtils.AgregarATLB(pid, pagina, marco)
+	}
+
 	return marco, nil
 }
