@@ -32,7 +32,7 @@ func main() {
 	mux.HandleFunc("/recibirInterrupcion", cpuUtils.RecibirInterrupcion)
 
 	// Buscar puerto disponible y levantar servidor
-	listener, puertoLibre, err := clientUtils.EncontrarPuertoDisponible("localhost", 8004)
+	listener, puertoLibre, err := clientUtils.EncontrarPuertoDisponible(globalscpu.CpuConfig.IpCpu, globalscpu.CpuConfig.PortCpu)
 	if err != nil {
 		panic(err)
 	}
