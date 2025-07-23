@@ -13,7 +13,10 @@ import (
 	clientUtils "github.com/sisoputnfrba/tp-golang/utils/client"
 	serverUtils "github.com/sisoputnfrba/tp-golang/utils/server"
 )
+
 var Nombre string
+var Puerto string
+
 // Lee el archivo de configuración y lo parsea en la estructura Config
 func IniciarConfiguracion(filePath string) *ioGlobalUtils.Config {
 	var config *ioGlobalUtils.Config
@@ -29,32 +32,29 @@ func IniciarConfiguracion(filePath string) *ioGlobalUtils.Config {
 	return config
 }
 
-const(
+const (
 	PID = iota
 	TIME
 )
 
 func RecibirPeticion(w http.ResponseWriter, r *http.Request) {
 
-	peticion := serverUtils.RecibirPaquetes(w,r)
+	peticion := serverUtils.RecibirPaquetes(w, r)
 
-	
 	// Log obligatorio de inicio de IO
 	clientUtils.Logger.Info(fmt.Sprintf("PID: %s - Inicio de IO - Tiempo: %s", peticion.Valores[PID], peticion.Valores[TIME]))
-
 	// Simula la ejecución del IO (usleep equivalente con time.Sleep)
-    milisegundos, err := strconv.Atoi(peticion.Valores[TIME])
-    if err != nil {
+	milisegundos, err := strconv.Atoi(peticion.Valores[TIME])
+	if err != nil {
 		clientUtils.Logger.Error("Error al convertir el tiempo")
-        return
-    }
+		return
+	}
 
-    // Convertir a time.Duration y dormir
-    time.Sleep(time.Duration(milisegundos) * time.Millisecond)
+	// Convertir a time.Duration y dormir
+	time.Sleep(time.Duration(milisegundos) * time.Millisecond)
 	// Log obligatorio de fin de IO
 	clientUtils.Logger.Info(fmt.Sprintf("PID: %s - Fin de IO", peticion.Valores[PID]))
 	avisarFinIO(peticion.Valores[PID])
-
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -68,15 +68,30 @@ func EnviarHandshakeAKernel(nombre string, puertoIo int) {
 
 }
 
-func avisarFinIO(PID string){
-	valores := []string{Nombre,"Fin", PID}
-	endpoint := "resultadoIos"
+func avisarFinIO(PID string) {
+	valores := []string{Nombre, PID}
+	endpoint := "finIos"
 	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, endpoint)
 }
 
 func AvisarDesconexion() {
-	valores := []string{Nombre,"Desconexion"}
-	endpoint := "resultadosIos" 
+	valores := []string{Nombre, ioGlobalUtils.IoConfig.IPIo, Puerto}
+	endpoint := "desconexionIos"
 	clientUtils.GenerarYEnviarPaquete(valores, ioGlobalUtils.IoConfig.IPKernel, ioGlobalUtils.IoConfig.PortKernel, endpoint)
 	clientUtils.Logger.Info(fmt.Sprintf("[IO] Dispositivo %s notifica su cierre al Kernel", Nombre))
+}
+
+func GenerarNombreUnico(baseName string, ext string) string {
+	nombre := baseName + ext
+	contador := 1
+
+	for {
+		if _, err := os.Stat(nombre); os.IsNotExist(err) {
+			break
+		}
+		nombre = fmt.Sprintf("%s%d%s", baseName, contador, ext)
+		contador++
+	}
+
+	return nombre
 }

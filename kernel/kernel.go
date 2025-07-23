@@ -19,6 +19,7 @@ func main() {
 	globalsKernel.KernelConfig = kernelUtils.IniciarConfiguracion("config.json")
 
 	kernelUtils.Plp = kernelUtils.InciarPlp()
+	kernelUtils.Pmp = kernelUtils.IniciarPmp()
 
 	args := os.Args
 	filePath := args[1]
@@ -41,7 +42,9 @@ func main() {
 	mux.HandleFunc("/ios", kernelUtils.RegistrarIo)
 
 	// IOs envian resultados a /resultadoIos
-	mux.HandleFunc("/resultadoIos", kernelUtils.ResultadoIos)
+	mux.HandleFunc("/finIos", kernelUtils.FinIos)
+
+	mux.HandleFunc("/desconexionIos", kernelUtils.DesconexionIos)
 
 	// Levanta el servidor en el puerto definido en el archivo de configuración
 	direccion := fmt.Sprintf("%s:%d", globalsKernel.KernelConfig.IpKernel, globalsKernel.KernelConfig.PortKernel)

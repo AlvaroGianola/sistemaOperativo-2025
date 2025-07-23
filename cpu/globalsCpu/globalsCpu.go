@@ -46,6 +46,7 @@ type EntradaCache struct {
 	Contenido  []byte
 	Uso        bool
 	Modificado bool
+	Offset     int
 }
 
 type Interrupcion struct {
