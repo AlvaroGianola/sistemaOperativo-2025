@@ -21,7 +21,6 @@ func BuscarPaginaEnCache(pid int, pagina int) ([]byte, bool) {
 			//CACHE DELAY
 			globalsCpu.Cache[i].Uso = true
 			time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
-			//clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache HIT - Pagina: %d", pid, pagina))
 			return entrada.Contenido, true
 		}
 	}
@@ -34,11 +33,11 @@ func ModificarContenidoCache(pid int, pagina int, contenido string, direccionLog
 
 	//contenidoPagina, _ := BuscarPaginaEnCache(pid, pagina)
 
-	/*
-		if len(contenido) > buscarEspacioLibrePagina(pid, contenidoPagina) {
-			clientUtils.Logger.Error("No hay espacio suficiente en la página para modificar el contenido")
-			return fmt.Errorf("no hay espacio suficiente en la página para modificar el contenido")
-		}*/
+	/*---
+	if len(contenido) > buscarEspacioLibrePagina(pid, contenidoPagina) {
+		clientUtils.Logger.Error("No hay espacio suficiente en la página para modificar el contenido")
+		return fmt.Errorf("no hay espacio suficiente en la página para modificar el contenido")
+	}*/
 
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
@@ -124,11 +123,16 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 		globalsCpu.Cache = append(globalsCpu.Cache, nuevaEntrada)
 		clientUtils.Logger.Info(fmt.Sprintf("PID %d - Cache Add - Página %d", pid, pagina))
 	} else {
+		/*
+			for i := range globalsCpu.CpuConfig.CacheEntries {
+				clientUtils.Logger.Debug("Paginas en cache con uso y modificado", "Pagina", globalsCpu.Cache[i].Pagina, "Uso", globalsCpu.Cache[i].Uso, "Modificado", globalsCpu.Cache[i].Modificado)
+			}*/
+		//clientUtils.Logger.Debug("Puntero en : ", "Puntero", globalsCpu.PunteroClock)
 		switch strings.ToLower(globalsCpu.CpuConfig.CacheReplacment) {
 		case "clock":
 			reemplazarPorClock(nuevaEntrada)
 		case "clock-m":
-			reemplazarPorClockM(nuevaEntrada)
+			reemplazarPorClockM(nuevaEntrada, pid, direccionLogica, dato)
 		default:
 			clientUtils.Logger.Error("Algoritmo de reemplazo de cache no reconocido")
 		}
@@ -172,8 +176,13 @@ func reemplazarPorClock(nuevaEntrada globalsCpu.EntradaCache) {
 	}
 }
 
-func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache) {
+func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccionLogica int, dato []byte) {
 	cantidadEntradas := len(globalsCpu.Cache)
+	marco, err := mmuUtils.ObtenerMarco(pid, direccionLogica)
+
+	if err != nil {
+		clientUtils.Logger.Error("Error al obtener el marco")
+	}
 
 	// Primer intento: Uso = false && Modificado = false
 	for i := 0; i < cantidadEntradas; i++ {
@@ -183,6 +192,7 @@ func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache) {
 			avanzarPuntero()
 			return
 		}
+		actual.Uso = false
 		avanzarPuntero()
 	}
 
@@ -194,7 +204,8 @@ func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache) {
 			avanzarPuntero()
 			return
 		}
-		actual.Uso = false
+		actual.Modificado = false
+		consultaWrite(pid, marco, direccionLogica, dato)
 		avanzarPuntero()
 	}
 
@@ -206,6 +217,7 @@ func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache) {
 			avanzarPuntero()
 			return
 		}
+		actual.Uso = false
 		avanzarPuntero()
 	}
 
@@ -348,4 +360,51 @@ func consultaRead(pid int, marco int) ([]byte, error) {
 	}
 
 	return paginaCompleta, nil
+}
+
+func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error {
+	pageSize := globalsCpu.Memoria.TamanioPagina
+	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
+
+	// Primero leemos toda la página para modificar solo los bytes necesarios
+	valoresLeer := []string{
+		strconv.Itoa(pid),
+		strconv.Itoa(marco),
+		strconv.Itoa(pageSize),
+	}
+	paqueteLeer := clientUtils.Paquete{Valores: valoresLeer}
+
+	paginaCompleta := clientUtils.EnviarPaqueteConRespuestaBody(
+		globalsCpu.CpuConfig.IpMemory,
+		globalsCpu.CpuConfig.PortMemory,
+		"readPagina",
+		paqueteLeer,
+	)
+
+	if len(paginaCompleta) != pageSize {
+		return fmt.Errorf("no se pudo leer página completa antes de escribir")
+	}
+
+	// Modificar solo el rango correspondiente
+	copy(paginaCompleta[desplazamiento:], datos)
+
+	// Preparar paquete para escribir página completa
+	valores := []string{
+		strconv.Itoa(pid),
+		strconv.Itoa(marco),
+		strconv.Itoa(pageSize),
+	}
+	for _, b := range paginaCompleta {
+		valores = append(valores, strconv.Itoa(int(b)))
+	}
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	clientUtils.EnviarPaquete(
+		globalsCpu.CpuConfig.IpMemory,
+		globalsCpu.CpuConfig.PortMemory,
+		"writePagina",
+		paquete,
+	)
+
+	return nil
 }
