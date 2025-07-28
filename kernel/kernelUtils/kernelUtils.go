@@ -116,39 +116,41 @@ func (cpu *Cpu) enviarInterrupcion(motivo string) {
 }
 
 type CpuList struct {
-	cpus []Cpu
+	cpus []*Cpu
 	mu   sync.Mutex
 }
 
 // Agregar una CPU
-func (cl *CpuList) Agregar(cpu Cpu) {
+func (cl *CpuList) Agregar(cpu *Cpu) {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 	cl.cpus = append(cl.cpus, cpu)
 }
 
 // Sacar la primera CPU
-func (cl *CpuList) SacarProxima() Cpu {
+func (cl *CpuList) SacarProxima() *Cpu {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
+	if len(cl.cpus) == 0 {
+		return nil
+	}
 	cpu := cl.cpus[0]
 	cl.cpus = cl.cpus[1:]
 	return cpu
 }
 
 // Buscar y sacar por ID
-func (cl *CpuList) BuscarYSacarPorID(id string) (Cpu, bool) {
+func (cl *CpuList) BuscarYSacarPorID(id string) (*Cpu, bool) {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 
 	for i, cpu := range cl.cpus {
 		if cpu.Identificador == id {
-			encontrada := cpu
 			cl.cpus = append(cl.cpus[:i], cl.cpus[i+1:]...)
-			return encontrada, true
+			return cpu, true
 		}
 	}
-	return Cpu{}, false
+	return nil, false
 }
 
 // Buscar por ID (sin eliminar)
@@ -156,41 +158,42 @@ func (cl *CpuList) BuscarPorID(id string) (*Cpu, bool) {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 
-	for i := range cl.cpus {
-		if cl.cpus[i].Identificador == id {
-			return &cl.cpus[i], true
+	for _, cpu := range cl.cpus {
+		if cpu.Identificador == id {
+			return cpu, true
 		}
 	}
 	return nil, false
 }
 
+// Sacar por ID (eliminar y retornar)
 func (cl *CpuList) SacarPorID(id string) *Cpu {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 
 	for i, cpu := range cl.cpus {
 		if cpu.Identificador == id {
-			// Eliminar del slice y retornar el puntero a la CPU removida
 			cl.cpus = append(cl.cpus[:i], cl.cpus[i+1:]...)
-			return &cpu
+			return cpu
 		}
 	}
-	// Si no se encuentra la CPU, retornar nil
 	return nil
 }
 
+// Buscar por PID en ejecución
 func (cl *CpuList) BuscarPorPIDEnEjecucion(pid uint) (*Cpu, bool) {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
 
-	for i := range cl.cpus {
-		if cl.cpus[i].PIDenEjecucion == pid {
-			return &cl.cpus[i], true
+	for _, cpu := range cl.cpus {
+		if cpu.PIDenEjecucion == pid {
+			return cpu, true
 		}
 	}
 	return nil, false
 }
 
+// Verificar si la lista está vacía
 func (cl *CpuList) Vacia() bool {
 	cl.mu.Lock()
 	defer cl.mu.Unlock()
@@ -612,6 +615,9 @@ type PMCPEstrategy struct {
 }
 
 func (p PMCPEstrategy) manejarIngresoDeProceso(nuevoProceso *PCB, plp *PlanificadorLargoPlazo) {
+	if plp.newState.Vacia() {
+		return
+	}
 	plp.newState.OrdenarPorPMC()
 	procesoMasChico := plp.newState.VizualizarProximo()
 	if Pmp.suspReadyState.Vacia() && nuevoProceso.ProcessSize < procesoMasChico.ProcessSize {
@@ -898,13 +904,16 @@ func (s SRTScheduler) intentarDesalojo(pcp *PlanificadorCortoPlazo, procesoNuevo
 		proceso.estaSiendoDesalojado.Store(true)
 		procesoNuevo.pidioDesalojo.Store(true)
 		go cpu.enviarInterrupcion("DESALOJO")
-		cpu.sem_interrupcionAtendida <- struct{}{}
+		clientUtils.Logger.Info(fmt.Sprintf("El proceso: %d solicito desalojo para el proceso %d que estaba ejecutando en: %s", procesoNuevo.PID, proceso.PID, cpu.Identificador))
+		<-cpu.sem_interrupcionAtendida
 		procesoSelecionado, ok := pcp.readyState.BuscarYSacarPorPID(procesoNuevo.PID)
 		if !ok {
 			clientUtils.Logger.Error(fmt.Sprintf("Error al encontrar el proceso PID %d en READY", procesoNuevo.PID))
 			return
 		}
 		procesoNuevo.pidioDesalojo.Store(false)
+		clientUtils.Logger.Info(fmt.Sprintf("El proceso: %d esta por mandarse a ejecutar a la cpu: %s despues del desalojo", procesoNuevo.PID, cpu.Identificador))
+
 		pcp.ejecutarConDesalojo(procesoSelecionado, cpu)
 	}
 }
@@ -923,9 +932,9 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso *PCB) {
 	if proceso.estaSiendoDesalojado.Load() {
 		proceso.estaSiendoDesalojado.Store(false)
 	} else if cpusLibres.Vacia() {
-		pcp.schedulerEstrategy.intentarDesalojo(pcp, proceso)
+		go pcp.schedulerEstrategy.intentarDesalojo(pcp, proceso)
 	}
-	sem_cpusLibres <- 0
+	<-sem_cpusLibres
 
 	pcp.schedulerEstrategy.selecionarProximoAEjecutar(pcp)
 }
@@ -1108,10 +1117,10 @@ func RegistrarCpu(w http.ResponseWriter, r *http.Request) {
 		sem_interrupcionAtendida: make(chan struct{}),
 	}
 
-	cpusLibres.Agregar(nuevaCpu)
-	<-sem_cpusLibres
+	cpusLibres.Agregar(&nuevaCpu)
+	sem_cpusLibres <- 1
 	clientUtils.Logger.Info(fmt.Sprintf("CPU registrada: %+v", nuevaCpu))
-
+	w.WriteHeader(http.StatusOK)
 }
 
 const (
@@ -1173,33 +1182,29 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "EXIT" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: EXIT", proceso.PID))
-		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Estaba ejecutando en %s", proceso.PID, cpu.Identificador))
 		go Plp.FinalizarProceso(proceso)
-
-		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Estoy por liberar CPU: %s", proceso.PID, cpu.Identificador))
-		cpusLibres.Agregar(*cpusOcupadas.SacarPorID(cpu.Identificador))
-
-		<-sem_cpusLibres
+		cpusLibres.Agregar(cpusOcupadas.SacarPorID(cpu.Identificador))
+		sem_cpusLibres <- 1
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DUMP_MEMORY" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: DUMP_MEMORY", proceso.PID))
 		go ManejarMemoryDump(proceso)
-		cpusLibres.Agregar(*cpusOcupadas.SacarPorID(cpu.Identificador))
+		cpusLibres.Agregar(cpusOcupadas.SacarPorID(cpu.Identificador))
 
-		<-sem_cpusLibres
+		sem_cpusLibres <- 1
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "IO" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: IO", proceso.PID))
 		go manejarIo(respuesta, proceso)
-		cpusLibres.Agregar(*cpusOcupadas.SacarPorID(cpu.Identificador))
-
-		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Liberada CPU: %s", proceso.PID, cpu.Identificador))
-		<-sem_cpusLibres
+		sem_cpusLibres <- 1
+		cpusLibres.Agregar(cpusOcupadas.SacarPorID(cpu.Identificador))
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DESALOJO" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Desalojado por algoritmo SJF/SRT", proceso.PID))
 		go Plp.pcp.RecibirProceso(proceso)
-		<-cpu.sem_interrupcionAtendida
+		cpu.sem_interrupcionAtendida <- struct{}{}
+		clientUtils.Logger.Info(fmt.Sprintf("ATENDI LA INTERRUPCION CPU: %s", cpu.Identificador))
+
 	} else {
 		clientUtils.Logger.Error("Error, motivo de devolución de proceso desconocido")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -1244,6 +1249,7 @@ func ManejarMemoryDump(proceso *PCB) {
 		return
 	}
 	if respuesta {
+		clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado BLOCKED al estado READY", proceso.PID))
 		Plp.pcp.RecibirProceso(proceso)
 	} else {
 		Plp.FinalizarProceso(proceso)
@@ -1296,12 +1302,15 @@ func RegistrarIo(w http.ResponseWriter, r *http.Request) {
 	grupoIo, ok := iosRegistradas.ObtenerGrupo(nombre)
 	if ok {
 		grupoIo.AgregarIo(nuevaIo)
-		manejarPendientesIo(nombre)
 	} else {
 		nuevoGrupo := &GrupoIo{Nombre: nombre}
 		nuevoGrupo.AgregarIo(nuevaIo)
 		iosRegistradas.AgregarGrupoIo(nuevoGrupo)
 		clientUtils.Logger.Info(fmt.Sprintf("IO registrada: %s", nombre))
+	}
+	w.WriteHeader(http.StatusOK)
+	if ok {
+		go manejarPendientesIo(nombre)
 	}
 }
 
@@ -1351,6 +1360,7 @@ func FinIos(w http.ResponseWriter, r *http.Request) {
 		proceso.MT.suspBlockedTime += proceso.timeInState()
 		Pmp.EnviarProcesoASuspReady(proceso)
 	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func DesconexionIos(w http.ResponseWriter, r *http.Request) {
@@ -1391,6 +1401,7 @@ func DesconexionIos(w http.ResponseWriter, r *http.Request) {
 
 	manejarDesconexionIo(nombre, io)
 	Plp.FinalizarProceso(proceso)
+	w.WriteHeader(http.StatusOK)
 }
 
 func manejarPendientesIo(nombre string) {

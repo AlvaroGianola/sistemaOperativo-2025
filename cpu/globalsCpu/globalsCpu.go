@@ -71,8 +71,6 @@ var Memoria CaracteristicasMemoria
 
 var Identificador string
 
-var ProcesoActual *Proceso = &Proceso{}
-
 func SetIdentificador(nuevoId string) {
 	Identificador = nuevoId
 }

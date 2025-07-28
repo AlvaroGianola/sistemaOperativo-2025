@@ -17,13 +17,12 @@ func main() {
 		os.Exit(1)
 	}
 	identificador := os.Args[1]
-
 	// Configurar logger
 	clientUtils.ConfigurarLogger("cpu" + identificador + ".log")
 
 	// Configurar CPU
-	globalscpu.CpuConfig = cpuUtils.IniciarConfiguracion("config.json")
 	globalscpu.SetIdentificador(identificador)
+	globalscpu.CpuConfig = cpuUtils.IniciarConfiguracion("config.json")
 	cpuUtils.ObtenerInfoMemoria()
 
 	// Registrar endpoints
