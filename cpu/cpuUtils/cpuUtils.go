@@ -497,7 +497,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 	consultaWrite(pid, marco, direccionLogica, []byte(dato))
 
 	//Log
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", globalsCpu.ProcesoActual.Pid, pagina, marco))
+	//clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", proceso.Pid, pagina, marco))
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		// Agregar a la caché
