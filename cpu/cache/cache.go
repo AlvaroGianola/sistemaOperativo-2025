@@ -21,23 +21,23 @@ func BuscarPaginaEnCache(pid int, pagina int) ([]byte, bool) {
 			//CACHE DELAY
 			globalsCpu.Cache[i].Uso = true
 			time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
-			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache HIT - Pagina: %d", pid, pagina))
 			return entrada.Contenido, true
 		}
 	}
 
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache MISS - Pagina: %d", pid, pagina))
+	//clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache MISS - Pagina: %d", pid, pagina))
 	return nil, false
 }
 
 func ModificarContenidoCache(pid int, pagina int, contenido string, direccionLogica int) error {
 
-	contenidoPagina, _ := BuscarPaginaEnCache(pid, pagina)
+	//contenidoPagina, _ := BuscarPaginaEnCache(pid, pagina)
 
+	/*---
 	if len(contenido) > buscarEspacioLibrePagina(pid, contenidoPagina) {
 		clientUtils.Logger.Error("No hay espacio suficiente en la página para modificar el contenido")
 		return fmt.Errorf("no hay espacio suficiente en la página para modificar el contenido")
-	}
+	}*/
 
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
@@ -52,7 +52,7 @@ func ModificarContenidoCache(pid int, pagina int, contenido string, direccionLog
 			globalsCpu.Cache[i].Modificado = true
 			//CACHE DELAY
 			time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
-			clientUtils.Logger.Info(fmt.Sprintf("Cache Modify - PID %d Página %d", pid, pagina))
+			//clientUtils.Logger.Info(fmt.Sprintf("Cache Modify - PID %d Página %d", pid, pagina))
 			return nil
 		}
 	}
@@ -68,7 +68,7 @@ func buscarEspacioLibrePagina(pid int, contenido []byte) int {
 	var espacioLibre int = 0
 
 	for i := 0; i < len(contenido); i++ {
-		if contenido[i] == 0 {
+		if contenido[i] == 0x00 {
 			espacioLibre++
 		}
 	}
@@ -101,8 +101,9 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 		return
 	}
 
-	paginaCompleta, err := consultaRead(pid, marco, direccionLogica, len(dato))
-	if err != nil {
+	paginaCompleta, err := consultaRead(pid, marco)
+
+	if err != nil || len(paginaCompleta) != tamPagina {
 		clientUtils.Logger.Error("AgregarACache - No se pudo leer la página completa antes de escribir en caché")
 		return
 	}
@@ -110,58 +111,133 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 	// Reemplazar parte de la página con el nuevo contenido
 	copy(paginaCompleta[desplazamiento:], dato[:bytesACopiar])
 
-	entrada := globalsCpu.EntradaCache{
+	nuevaEntrada := globalsCpu.EntradaCache{
 		Pid:        pid,
 		Pagina:     pagina,
 		Contenido:  paginaCompleta,
 		Uso:        true,
-		Modificado: true, // ya que agregamos nuevo contenido
+		Modificado: true,
 	}
 
 	if len(globalsCpu.Cache) < globalsCpu.CpuConfig.CacheEntries {
-		globalsCpu.Cache = append(globalsCpu.Cache, entrada)
-		clientUtils.Logger.Info(fmt.Sprintf("Cache Add - PID %d Página %d", pid, pagina))
+		globalsCpu.Cache = append(globalsCpu.Cache, nuevaEntrada)
+		clientUtils.Logger.Info(fmt.Sprintf("PID %d - Cache Add - Página %d", pid, pagina))
 	} else {
-		cantidadEntradas := len(globalsCpu.Cache)
-		vueltas := 0
-		for vueltas < cantidadEntradas {
-			actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
-			switch strings.ToLower(globalsCpu.CpuConfig.CacheReplacment) {
-			case "clock":
-				if !actual.Uso {
-					reemplazarEntradaCache(globalsCpu.PunteroClock, entrada)
-					goto check_overflow
-				}
-				actual.Uso = false
-
-			case "clock-m":
-				if !actual.Uso && !actual.Modificado {
-					reemplazarEntradaCache(globalsCpu.PunteroClock, entrada)
-					goto check_overflow
-				}
-				actual.Uso = false
-			}
-			globalsCpu.PunteroClock = (globalsCpu.PunteroClock + 1) % cantidadEntradas
-			vueltas++
+		/*
+			for i := range globalsCpu.CpuConfig.CacheEntries {
+				clientUtils.Logger.Debug("Paginas en cache con uso y modificado", "Pagina", globalsCpu.Cache[i].Pagina, "Uso", globalsCpu.Cache[i].Uso, "Modificado", globalsCpu.Cache[i].Modificado)
+			}*/
+		//clientUtils.Logger.Debug("Puntero en : ", "Puntero", globalsCpu.PunteroClock)
+		switch strings.ToLower(globalsCpu.CpuConfig.CacheReplacment) {
+		case "clock":
+			reemplazarPorClock(nuevaEntrada)
+		case "clock-m":
+			reemplazarPorClockM(nuevaEntrada, pid, direccionLogica, dato)
+		default:
+			clientUtils.Logger.Error("Algoritmo de reemplazo de cache no reconocido")
 		}
 	}
 
-check_overflow:
+	// Si el contenido se desbordó a otra página, escribimos el resto recursivamente
 	if sePasa {
 		nuevaDireccion := direccionLogica + bytesACopiar
 		AgregarACache(pid, nuevaDireccion, restante)
 	}
 }
 
+func avanzarPuntero() {
+	globalsCpu.PunteroClock = (globalsCpu.PunteroClock + 1) % len(globalsCpu.Cache)
+}
+
+func reemplazarPorClock(nuevaEntrada globalsCpu.EntradaCache) {
+	cantidadEntradas := len(globalsCpu.Cache)
+
+	// Primera vuelta: buscar Uso = false
+	for i := 0; i < cantidadEntradas; i++ {
+		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+		if !actual.Uso {
+			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+			avanzarPuntero()
+			return
+		}
+		actual.Uso = false
+		avanzarPuntero()
+	}
+
+	// Segunda vuelta: ahora alguna tendrá Uso = false
+	for i := 0; i < cantidadEntradas; i++ {
+		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+		if !actual.Uso {
+			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+			avanzarPuntero()
+			return
+		}
+		avanzarPuntero()
+	}
+}
+
+func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccionLogica int, dato []byte) {
+	cantidadEntradas := len(globalsCpu.Cache)
+	marco, err := mmuUtils.ObtenerMarco(pid, direccionLogica)
+
+	if err != nil {
+		clientUtils.Logger.Error("Error al obtener el marco")
+	}
+
+	// Primer intento: Uso = false && Modificado = false
+	for i := 0; i < cantidadEntradas; i++ {
+		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+		if !actual.Uso && !actual.Modificado {
+			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+			avanzarPuntero()
+			return
+		}
+		actual.Uso = false
+		avanzarPuntero()
+	}
+
+	// Segundo intento: Uso = false && Modificado = true, limpiando Uso en el camino
+	for i := 0; i < cantidadEntradas; i++ {
+		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+		if !actual.Uso && actual.Modificado {
+			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+			avanzarPuntero()
+			return
+		}
+		actual.Modificado = false
+		consultaWrite(pid, marco, direccionLogica, dato)
+		avanzarPuntero()
+	}
+
+	// Tercer intento: después de limpiar Uso, alguna debería ser candidata
+	for i := 0; i < cantidadEntradas; i++ {
+		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+		if !actual.Uso && !actual.Modificado {
+			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+			avanzarPuntero()
+			return
+		}
+		actual.Uso = false
+		avanzarPuntero()
+	}
+
+	// Cuarta vuelta (ya sin Uso): tomá la primera que encuentres
+	for i := 0; i < cantidadEntradas; i++ {
+		reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+		avanzarPuntero()
+		return
+	}
+}
+
 func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 	evictada := globalsCpu.Cache[indice]
 
-	clientUtils.Logger.Debug("El valor de evictada es: ", "Evictada", evictada.Contenido)
+	//clientUtils.Logger.Debug("El valor de evictada es: ", "Evictada", evictada.Contenido)
 
-	clientUtils.Logger.Debug("La cache a modificar y la que la modifica son", "Modificada", evictada, "Modificadora", nueva)
+	//clientUtils.Logger.Debug("La cache a modificar y la que la modifica son", "Modificada", evictada, "Modificadora", nueva)
 
 	if evictada.Modificado {
-		clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - Página %d modificada → escribir en Memoria", evictada.Pagina))
+		//clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - Página %d modificada → escribir en Memoria", evictada.Pagina))
 
 		// 🔍 Buscar marco real
 		direccionLogica := mmuUtils.ObtenerDireccionLogica(evictada.Pagina)
@@ -210,13 +286,13 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 			paquete,
 		)
 
-		clientUtils.Logger.Info(fmt.Sprintf("Se envió contenido a Memoria: PID %d Página %d Marco %d", evictada.Pid, evictada.Pagina, marco))
+		clientUtils.Logger.Info(fmt.Sprintf("PID %d - Memory Update - Página %d - Frame %d", evictada.Pid, evictada.Pagina, marco))
 	}
 
 	time.Sleep(time.Millisecond * time.Duration(globalsCpu.CpuConfig.CacheDelay))
 
 	globalsCpu.Cache[indice] = nueva
-	clientUtils.Logger.Info(fmt.Sprintf("Cache Replace - PID %d Página %d → Nueva entrada", nueva.Pid, nueva.Pagina))
+	clientUtils.Logger.Info(fmt.Sprintf("PID %d - Cache Add - Página %d", nueva.Pid, nueva.Pagina))
 }
 
 func FlushPaginasModificadas(pid int) {
@@ -248,7 +324,7 @@ func FlushPaginasModificadas(pid int) {
 				paquete,
 			)
 
-			clientUtils.Logger.Info(fmt.Sprintf("[Flush] PID %d: Página %d → Marco %d guardada en Memoria", pid, entrada.Pagina, marco))
+			clientUtils.Logger.Info(fmt.Sprintf("PID %d - Memory Update - Página %d Marco %d", pid, entrada.Pagina, marco))
 		}
 	}
 }
@@ -260,31 +336,8 @@ func LimpiarCache() {
 	globalsCpu.Cache = []globalsCpu.EntradaCache{}
 }
 
-func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte, error) {
+func consultaRead(pid int, marco int) ([]byte, error) {
 	pageSize := globalsCpu.Memoria.TamanioPagina
-	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
-	direccionFisica := marco*pageSize + desplazamiento
-	if tamanio < 1 {
-		valores := []string{
-			strconv.Itoa(pid),
-			strconv.Itoa(direccionFisica),
-		}
-		paquete := clientUtils.Paquete{Valores: valores}
-
-		respuesta := clientUtils.EnviarPaqueteConRespuestaBody(
-			globalsCpu.CpuConfig.IpMemory,
-			globalsCpu.CpuConfig.PortMemory,
-			"readMemoria",
-			paquete,
-		)
-
-		if respuesta == nil || len(respuesta) == 0 {
-			return nil, fmt.Errorf("no se pudo obtener dato en readMemoria")
-		}
-
-		return respuesta, nil
-	}
-
 	// Lectura de página completa
 	valores := []string{
 		strconv.Itoa(pid),
@@ -292,6 +345,8 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 		strconv.Itoa(pageSize),
 	}
 	paquete := clientUtils.Paquete{Valores: valores}
+
+	//clientUtils.Logger.Debug("Paquetes a enviar", "Paquete", paquete)
 
 	paginaCompleta := clientUtils.EnviarPaqueteConRespuestaBody(
 		globalsCpu.CpuConfig.IpMemory,
@@ -304,9 +359,52 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 		return nil, fmt.Errorf("tamaño de página recibido incorrecto")
 	}
 
-	if desplazamiento+tamanio > pageSize {
-		return nil, fmt.Errorf("rango de lectura excede el tamaño de página")
+	return paginaCompleta, nil
+}
+
+func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error {
+	pageSize := globalsCpu.Memoria.TamanioPagina
+	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
+
+	// Primero leemos toda la página para modificar solo los bytes necesarios
+	valoresLeer := []string{
+		strconv.Itoa(pid),
+		strconv.Itoa(marco),
+		strconv.Itoa(pageSize),
+	}
+	paqueteLeer := clientUtils.Paquete{Valores: valoresLeer}
+
+	paginaCompleta := clientUtils.EnviarPaqueteConRespuestaBody(
+		globalsCpu.CpuConfig.IpMemory,
+		globalsCpu.CpuConfig.PortMemory,
+		"readPagina",
+		paqueteLeer,
+	)
+
+	if len(paginaCompleta) != pageSize {
+		return fmt.Errorf("no se pudo leer página completa antes de escribir")
 	}
 
-	return paginaCompleta, nil
+	// Modificar solo el rango correspondiente
+	copy(paginaCompleta[desplazamiento:], datos)
+
+	// Preparar paquete para escribir página completa
+	valores := []string{
+		strconv.Itoa(pid),
+		strconv.Itoa(marco),
+		strconv.Itoa(pageSize),
+	}
+	for _, b := range paginaCompleta {
+		valores = append(valores, strconv.Itoa(int(b)))
+	}
+	paquete := clientUtils.Paquete{Valores: valores}
+
+	clientUtils.EnviarPaquete(
+		globalsCpu.CpuConfig.IpMemory,
+		globalsCpu.CpuConfig.PortMemory,
+		"writePagina",
+		paquete,
+	)
+
+	return nil
 }

@@ -114,11 +114,11 @@ func ObtenerInfoMemoria() {
 	globalsCpu.Memoria.NivelesPaginacion = valores.Niveles
 	globalsCpu.Memoria.CantidadEntradas = valores.EntradasPorNivel
 
-	clientUtils.Logger.Info("Informacion de memoria obtenida correctamente",
+	/*clientUtils.Logger.Info("Informacion de memoria obtenida correctamente",
 		"Tamaño página", globalsCpu.Memoria.TamanioPagina,
 		"Niveles", globalsCpu.Memoria.NivelesPaginacion,
 		"Entradas por tabla", globalsCpu.Memoria.CantidadEntradas,
-	)
+	)*/
 }
 
 // Recibe un proceso del Kernel y lo loguea
@@ -183,7 +183,7 @@ func PedirSiguienteInstruccionMemoria(proceso *globalsCpu.Proceso) (string, bool
 	valores := []string{strconv.Itoa(proceso.Pid), strconv.Itoa(proceso.Pc)}
 	paquete := clientUtils.Paquete{Valores: valores}
 	instruccion := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpMemory, globalsCpu.CpuConfig.PortMemory, "siguienteInstruccion", paquete)
-	clientUtils.Logger.Info(string(instruccion))
+	//clientUtils.Logger.Info(string(instruccion))
 	if instruccion == nil {
 		clientUtils.Logger.Error("No se recibió respuesta de Memoria")
 		return "", false
@@ -234,7 +234,7 @@ func HandleProceso(ctx context.Context, proceso *globalsCpu.Proceso) {
 		cod_op, variables := DecodeInstruccion(instruccion)
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción decodificada: %s, con las variables %s", cod_op, variables))
 		//#EXECUTE
-		clientUtils.Logger.Info("## Ejecutando instrucción")
+		//clientUtils.Logger.Info("## Ejecutando instrucción")
 		cont := ExecuteInstruccion(proceso, cod_op, variables)
 
 		clientUtils.Logger.Info("## Verificando interrupciones")
@@ -276,8 +276,8 @@ func EnviarResultadoAKernel(pc int, cod_op string, args []string) {
 
 	valores := append(ids, args...)
 
-	resultadoStr := strings.Join(valores, " ")
-	clientUtils.Logger.Info(fmt.Sprintf("valores a enviar a kernel: %s", resultadoStr))
+	//resultadoStr := strings.Join(valores, " ")
+	//clientUtils.Logger.Info(fmt.Sprintf("valores a enviar a kernel: %s", resultadoStr))
 
 	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "resultadoProcesos")
 }
@@ -318,13 +318,13 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 	clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - Ejecutando: %s - %s", proceso.Pid, cod_op, variables))
 	switch cod_op {
 	case NOOP:
-		clientUtils.Logger.Info("## Ejecutando NOOP")
+		//clientUtils.Logger.Info("## Ejecutando NOOP")
 		time.Sleep(2 * time.Second)
 		proceso.Pc++
 		return true
 
 	case WRITE:
-		clientUtils.Logger.Info("## Ejecutando WRITE")
+		//clientUtils.Logger.Info("## Ejecutando WRITE")
 		direccion := variables[0]
 		dato := variables[1]
 		direccionInt, err := strconv.Atoi(direccion)
@@ -338,7 +338,7 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 		proceso.Pc++
 		return true
 	case READ:
-		clientUtils.Logger.Info("## Ejecutando READ")
+		//clientUtils.Logger.Info("## Ejecutando READ")
 		direccion := variables[0]
 		tamanio := variables[1]
 		direccionInt, err := strconv.Atoi(direccion)
@@ -357,7 +357,7 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 		proceso.Pc++
 		return true
 	case GOTO:
-		clientUtils.Logger.Info("## Ejecutando GOTO")
+		//clientUtils.Logger.Info("## Ejecutando GOTO")
 		nuevoPC, err := strconv.Atoi(variables[0])
 		if err != nil {
 			clientUtils.Logger.Warn("GOTO: argumento inválido, no es un número")
@@ -432,7 +432,7 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 			}
 			return
 		} else {
-			clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Cache MISS", pid, pagina))
+			//clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Cache MISS", pid, pagina))
 		}
 	}
 
@@ -469,10 +469,11 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 	// Traducir dirección lógica a física
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 
-	if globalsCpu.CpuConfig.CacheEntries > 0 {
+	if globalsCpu.CpuConfig.CacheEntries != 0 {
 		_, encontroDato := cacheUtils.BuscarPaginaEnCache(pid, pagina)
 		if encontroDato {
-			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d, Contenido %s → Cache HIT", pid, pagina, dato))
+			//Logs en buscarPaginaEnCache
+			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache HIT - Página %d, Contenido %s", pid, pagina, dato))
 			err := cacheUtils.ModificarContenidoCache(pid, pagina, dato, direccionLogica)
 			if err != nil {
 				clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al modificar contenido en cache: %s", err))
@@ -481,7 +482,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 				return
 			}
 		} else {
-			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d → Cache MISS", pid, pagina))
+			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache MISS - Página %d", pid, pagina))
 			cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato))
 			return
 		}
@@ -493,19 +494,19 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		return
 	}
 
-	//Log
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", pid, pagina, marco))
-
 	consultaWrite(pid, marco, direccionLogica, []byte(dato))
+
+	//Log
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", globalsCpu.ProcesoActual.Pid, pagina, marco))
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		// Agregar a la caché
 		cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato))
-		clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d → Agregando a caché", pid, pagina))
+		clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache Add - Página %d", pid, pagina))
 	}
 
 	// Log
-	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: WRITE - Dirección Física: %d - Valor: %s.", pid, marco, dato))
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Escribir - Dirección Física: %d - Valor: %s.", pid, marco, dato))
 
 }
 
@@ -639,8 +640,8 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 func LimpiarProceso(pid int) {
 	//Paso los datos de la cache que fueron modificados a memoria
 	// Luego limpio el cache y luego la TLB
-	if globalsCpu.CpuConfig.CacheEntries > 0 {
-		clientUtils.Logger.Info("Cache detectada, se flushearan las paginas modificadas a la memoria")
+	if globalsCpu.CpuConfig.CacheEntries != 0 {
+		//clientUtils.Logger.Info("Cache detectada, se flushearan las paginas modificadas a la memoria")
 		cacheUtils.FlushPaginasModificadas(pid)
 		cacheUtils.LimpiarCache()
 	}
