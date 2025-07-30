@@ -194,13 +194,10 @@ func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccio
 			avanzarPuntero()
 			return
 		}
-		if actual.Uso {
-			actual.Uso = false
-		}
 		avanzarPuntero()
 	}
 
-	// Fase 2: Buscar Uso=false y Modificado=true → escribir antes
+	// Fase 2: Buscar Uso=false y Modificado=true → escribo antes (Si su Uso=true lo setteo en false)
 	for i := 0; i < cantidad; i++ {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
 		if !actual.Uso && actual.Modificado {
@@ -209,18 +206,40 @@ func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccio
 			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
 			avanzarPuntero()
 			return
+		} else if !actual.Uso {
+			actual.Uso = true
 		}
 		avanzarPuntero()
 	}
 
-	// Fallback: reemplazá lo que sea
-	actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
-	clientUtils.Logger.Warn(fmt.Sprintf("CLOCK-M FASE 3 - Forzado reemplazo de página %d", actual.Pagina))
-	if actual.Modificado {
-		consultaWrite(actual.Pid, marco, actual.Pagina*globalsCpu.Memoria.TamanioPagina, actual.Contenido)
+	// Si no encuentro ninguno con Uso=false y Modificado=true Vuelvo a hacer fase 1
+	// Fase 3: Buscar Uso=false y Modificado=false
+	for i := 0; i < cantidad; i++ {
+		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+		if !actual.Uso && !actual.Modificado {
+			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 1 - Reemplazo limpio de página %d", actual.Pagina))
+			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+			avanzarPuntero()
+			return
+		}
+		avanzarPuntero()
 	}
-	reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
-	avanzarPuntero()
+
+	// Vuelvo a hacer fase 2
+	// Fase 4: Buscar Uso=false y Modificado=true → escribir antes y reemplazar(Si o si tiene que haber 1)
+	for i := 0; i < cantidad; i++ {
+		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+		if !actual.Uso && actual.Modificado {
+			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 2 - Reemplazo de página modificada %d", actual.Pagina))
+			consultaWrite(actual.Pid, marco, actual.Pagina*globalsCpu.Memoria.TamanioPagina, actual.Contenido)
+			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+			avanzarPuntero()
+			return
+		} else if !actual.Uso {
+			actual.Uso = true
+		}
+		avanzarPuntero()
+	}
 }
 
 func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
