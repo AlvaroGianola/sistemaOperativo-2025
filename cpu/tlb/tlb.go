@@ -26,19 +26,22 @@ func AgregarATLB(pid int, pagina int, marco int) {
 	switch globalsCpu.CpuConfig.TlbReplacement {
 	case "FIFO":
 		indice := BuscarEntradaMasVieja()
-		clientUtils.Logger.Debug("Se reemplazo la tlb: ", "TLB: ", globalsCpu.Tlb[indice])
+		//clientUtils.Logger.Debug("El indice es ", "indice", indice)
+		//clientUtils.Logger.Debug("Se reemplazo la tlb: ", "TLB: ", globalsCpu.Tlb[indice])
 		globalsCpu.Tlb[indice] = entrada
 	case "LRU":
 		indice := BuscarEntradaMenosUsada()
-		clientUtils.Logger.Debug("Se reemplazo la tlb: ", "TLB: ", globalsCpu.Tlb[indice])
+		//clientUtils.Logger.Debug("Se reemplazo la tlb: ", "TLB: ", globalsCpu.Tlb[indice])
 		globalsCpu.Tlb[indice] = entrada
 	}
-	clientUtils.Logger.Info("TLB Replace", "PID", pid, "Página", pagina, "Marco", marco)
+	//clientUtils.Logger.Info("TLB Replace", "PID", pid, "Página", pagina, "Marco", marco)
 }
 
 func BuscarEntradaMasVieja() int {
 	masVieja := 0
+	//clientUtils.Logger.Debug("Estado de tlbs", "pagina", globalsCpu.Tlb[masVieja].Pagina, "InstanteCarga", globalsCpu.Tlb[masVieja].InstanteCargado)
 	for i := 1; i < len(globalsCpu.Tlb); i++ {
+		//clientUtils.Logger.Debug("Estado de tlbs", "pagina", globalsCpu.Tlb[i].Pagina, "InstanteCarga", globalsCpu.Tlb[i].InstanteCargado)
 		if globalsCpu.Tlb[i].InstanteCargado.Before(globalsCpu.Tlb[masVieja].InstanteCargado) {
 			masVieja = i
 		}
@@ -73,8 +76,6 @@ func ConsultarMarco(pagina int) (int, bool) {
 func LimpiarTLB() {
 	globalsCpu.TlbMutex.Lock()
 	defer globalsCpu.TlbMutex.Unlock()
-	if globalsCpu.CpuConfig.TlbEntries != 0 {
-		globalsCpu.Tlb = []globalsCpu.EntradaTLB{}
-		clientUtils.Logger.Info("TLB Cleared")
-	}
+	globalsCpu.Tlb = []globalsCpu.EntradaTLB{}
+	//clientUtils.Logger.Info("TLB Cleared")
 }

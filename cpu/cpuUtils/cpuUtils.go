@@ -1,6 +1,7 @@
 package cpuUtils
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
@@ -31,6 +34,19 @@ const (
 	// Constantes para los tipos de interrupción
 	INVALID = "INVALID"
 )
+
+// globalsCpu.go (o donde tengas tus globals)
+/*
+var (
+	ejecutando      = false
+	ejecutandoMutex sync.Mutex
+)*/
+
+var PIDAnterior atomic.Int32
+var UltimaSycall string
+var mutexUltimaSycall sync.Mutex
+var cancelProcesoActual context.CancelFunc
+var ctxMutex sync.Mutex
 
 // Representa un proceso con su PID y su Program Counter (PC)
 type Proceso struct {
@@ -75,7 +91,7 @@ func ObtenerInfoMemoria() {
 	// Leer el body de la respuesta
 	bodyBytes, err := io.ReadAll(respuesta.Body)
 	if err != nil {
-		clientUtils.Logger.Error("error leyendo respuesta: %s", err.Error())
+		clientUtils.Logger.Error(fmt.Sprintf("error leyendo respuesta: %s", err.Error()))
 		return
 	}
 
@@ -98,16 +114,15 @@ func ObtenerInfoMemoria() {
 	globalsCpu.Memoria.NivelesPaginacion = valores.Niveles
 	globalsCpu.Memoria.CantidadEntradas = valores.EntradasPorNivel
 
-	clientUtils.Logger.Info("Informacion de memoria obtenida correctamente",
+	/*clientUtils.Logger.Info("Informacion de memoria obtenida correctamente",
 		"Tamaño página", globalsCpu.Memoria.TamanioPagina,
 		"Niveles", globalsCpu.Memoria.NivelesPaginacion,
 		"Entradas por tabla", globalsCpu.Memoria.CantidadEntradas,
-	)
+	)*/
 }
 
 // Recibe un proceso del Kernel y lo loguea
 func RecibirProceso(w http.ResponseWriter, r *http.Request) {
-
 	paquete := serverUtils.RecibirPaquetes(w, r)
 
 	spid := paquete.Valores[0]
@@ -126,22 +141,49 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
+	/*
+		// ⚠️ Bloqueo crítico: proteger con mutex para evitar que entren dos a la vez
+		ejecutandoMutex.Lock()
+		if ejecutando {
+			clientUtils.Logger.Warn("Ya hay un proceso en ejecución. Ignorando nuevo ingreso.")
+			ejecutandoMutex.Unlock()
+			http.Error(w, "CPU ocupada", http.StatusConflict)
+			return
+		}
+		ejecutando = true
+		ejecutandoMutex.Unlock()*/
+	if pid != int(PIDAnterior.Load()) && UltimaSycall != "INIT_PROC" {
+		globalsCpu.Interrupciones.ExisteInterrupcion = false
+		globalsCpu.Interrupciones.Motivo = ""
+	}
+	// Creamos nuevo proceso local, sin depender de globalsCpu.ProcesoActual
+	proceso := &globalsCpu.Proceso{
+		Pid: pid,
+		Pc:  pc,
+	}
 
 	clientUtils.Logger.Info(fmt.Sprintf("## Llega proceso - PID: %d, PC: %d", pid, pc))
-	globalsCpu.ProcesoActual.Pc = pc
-	globalsCpu.ProcesoActual.Pid = pid
-	globalsCpu.Interrupciones.ExisteInterrupcion = false
-	globalsCpu.Interrupciones.Motivo = ""
-	HandleProceso(globalsCpu.ProcesoActual)
+	ctxMutex.Lock()
+	// Cancelar ejecución anterior si había
+	if cancelProcesoActual != nil {
+		clientUtils.Logger.Warn("Cancelando ejecución de proceso anterior")
+		cancelProcesoActual()
+	}
 
+	// Crear nuevo contexto para este proceso
+	var ctx context.Context
+	ctx, cancelProcesoActual = context.WithCancel(context.Background())
+	ctxMutex.Unlock()
+
+	go HandleProceso(ctx, proceso)
 	w.WriteHeader(http.StatusOK)
 }
 
-func PedirSiguienteInstruccionMemoria() (string, bool) {
-	valores := []string{strconv.Itoa(globalsCpu.ProcesoActual.Pid), strconv.Itoa(globalsCpu.ProcesoActual.Pc)}
+func PedirSiguienteInstruccionMemoria(proceso *globalsCpu.Proceso) (string, bool) {
+	valores := []string{strconv.Itoa(proceso.Pid), strconv.Itoa(proceso.Pc)}
 	paquete := clientUtils.Paquete{Valores: valores}
 	instruccion := clientUtils.EnviarPaqueteConRespuestaBody(globalsCpu.CpuConfig.IpMemory, globalsCpu.CpuConfig.PortMemory, "siguienteInstruccion", paquete)
-	clientUtils.Logger.Info(string(instruccion))
+	//clientUtils.Logger.Info(string(instruccion))
 	if instruccion == nil {
 		clientUtils.Logger.Error("No se recibió respuesta de Memoria")
 		return "", false
@@ -170,24 +212,39 @@ func EnviarHandshakeAMemoria(identificador string, puertoLibre int) {
 
 // handleProceso será el núcleo del ciclo de instrucción en Checkpoint 2 en adelante
 // Por ahora queda como placeholder para mantener la estructura modular
-func HandleProceso(proceso *globalsCpu.Proceso) {
+func HandleProceso(ctx context.Context, proceso *globalsCpu.Proceso) {
 	for {
-
+		select {
+		case <-ctx.Done():
+			clientUtils.Logger.Warn(fmt.Sprintf("## PID: %d - Cancelado por llegada de nuevo proceso", proceso.Pid))
+			return
+		default:
+			// seguir normalmente
+		}
 		//#FETCH
-		instruccion, ok := PedirSiguienteInstruccionMemoria()
+		instruccion, ok := PedirSiguienteInstruccionMemoria(proceso)
 		if !ok {
 
 			clientUtils.Logger.Error("Error al pedir la siguiente instruccion a memoria")
 			return
 		}
-		clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - FETCH - Program Counter: %d", globalsCpu.ProcesoActual.Pid, globalsCpu.ProcesoActual.Pc))
+		clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - FETCH - Program Counter: %d", proceso.Pid, proceso.Pc))
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción: %s", instruccion))
 		//#DECODE
 		cod_op, variables := DecodeInstruccion(instruccion)
 		clientUtils.Logger.Info(fmt.Sprintf("## Instrucción decodificada: %s, con las variables %s", cod_op, variables))
 		//#EXECUTE
-		clientUtils.Logger.Info("## Ejecutando instrucción")
+		//clientUtils.Logger.Info("## Ejecutando instrucción")
 		cont := ExecuteInstruccion(proceso, cod_op, variables)
+
+		clientUtils.Logger.Info("## Verificando interrupciones")
+		if globalsCpu.Interrupciones.ExisteInterrupcion {
+			clientUtils.Logger.Info("## Interrupcion recibida")
+			globalsCpu.Interrupciones.ExisteInterrupcion = false
+			EnviarResultadoAKernel(proceso.Pc, globalsCpu.Interrupciones.Motivo, nil)
+			return
+		}
+
 		if !cont {
 			if cod_op == EXIT {
 				clientUtils.Logger.Info("## Proceso finalizado")
@@ -197,13 +254,6 @@ func HandleProceso(proceso *globalsCpu.Proceso) {
 		}
 		//#CHECK
 		// le pregunto a kernel si hay una interrupción
-		clientUtils.Logger.Info("## Verificando interrupciones")
-		if globalsCpu.Interrupciones.ExisteInterrupcion {
-			clientUtils.Logger.Info("## Interrupcion recibida")
-			globalsCpu.Interrupciones.ExisteInterrupcion = false
-			EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, globalsCpu.Interrupciones.Motivo, nil)
-			return
-		}
 
 	}
 
@@ -226,8 +276,8 @@ func EnviarResultadoAKernel(pc int, cod_op string, args []string) {
 
 	valores := append(ids, args...)
 
-	resultadoStr := strings.Join(valores, " ")
-	clientUtils.Logger.Info(fmt.Sprintf("valores a enviar a kernel: %s", resultadoStr))
+	//resultadoStr := strings.Join(valores, " ")
+	//clientUtils.Logger.Info(fmt.Sprintf("valores a enviar a kernel: %s", resultadoStr))
 
 	clientUtils.GenerarYEnviarPaquete(valores, globalsCpu.CpuConfig.IpKernel, globalsCpu.CpuConfig.PortKernel, "resultadoProcesos")
 }
@@ -265,16 +315,16 @@ func DecodeInstruccion(instruccion string) (cod_op string, variables []string) {
 }
 
 func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []string) bool {
-	clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - Ejecutando: %s - %s", globalsCpu.ProcesoActual.Pid, cod_op, variables))
+	clientUtils.Logger.Info(fmt.Sprintf("## PID: %d - Ejecutando: %s - %s", proceso.Pid, cod_op, variables))
 	switch cod_op {
 	case NOOP:
-		clientUtils.Logger.Info("## Ejecutando NOOP")
+		//clientUtils.Logger.Info("## Ejecutando NOOP")
 		time.Sleep(2 * time.Second)
-		globalsCpu.ProcesoActual.Pc++
+		proceso.Pc++
 		return true
 
 	case WRITE:
-		clientUtils.Logger.Info("## Ejecutando WRITE")
+		//clientUtils.Logger.Info("## Ejecutando WRITE")
 		direccion := variables[0]
 		dato := variables[1]
 		direccionInt, err := strconv.Atoi(direccion)
@@ -285,10 +335,10 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 		}
 
 		writeMemoria(proceso.Pid, direccionInt, dato)
-		globalsCpu.ProcesoActual.Pc++
+		proceso.Pc++
 		return true
 	case READ:
-		clientUtils.Logger.Info("## Ejecutando READ")
+		//clientUtils.Logger.Info("## Ejecutando READ")
 		direccion := variables[0]
 		tamanio := variables[1]
 		direccionInt, err := strconv.Atoi(direccion)
@@ -304,16 +354,16 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 		}
 
 		readMemoria(proceso.Pid, direccionInt, tamanioInt)
-		globalsCpu.ProcesoActual.Pc++
+		proceso.Pc++
 		return true
 	case GOTO:
-		clientUtils.Logger.Info("## Ejecutando GOTO")
+		//clientUtils.Logger.Info("## Ejecutando GOTO")
 		nuevoPC, err := strconv.Atoi(variables[0])
 		if err != nil {
 			clientUtils.Logger.Warn("GOTO: argumento inválido, no es un número")
 			break
 		}
-		globalsCpu.ProcesoActual.Pc = nuevoPC
+		proceso.Pc = nuevoPC
 		return true
 	case IO, INIT_PROC, DUMP_MEMORY, EXIT:
 		Syscall(proceso, cod_op, variables)
@@ -326,29 +376,33 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 }
 
 func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
+	PIDAnterior.Store(int32(proceso.Pid))
+	mutexUltimaSycall.Lock()
+	UltimaSycall = cod_op
+	mutexUltimaSycall.Unlock()
 	switch cod_op {
 	case IO:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar IO")
-		LimpiarProceso(globalsCpu.ProcesoActual.Pid)
-		globalsCpu.ProcesoActual.Pc++
-		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
+		LimpiarProceso(proceso.Pid)
+		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		return
 	case INIT_PROC:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar INIT_PROC")
-		LimpiarProceso(globalsCpu.ProcesoActual.Pid)
-		globalsCpu.ProcesoActual.Pc++
-		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
+		LimpiarProceso(proceso.Pid)
+		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		return
 	case DUMP_MEMORY:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar DUMP_MEMORY")
-		LimpiarProceso(globalsCpu.ProcesoActual.Pid)
-		globalsCpu.ProcesoActual.Pc++
-		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
+		LimpiarProceso(proceso.Pid)
+		proceso.Pc++
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		return
 	case EXIT:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar EXIT")
-		LimpiarProceso(globalsCpu.ProcesoActual.Pid)
-		EnviarResultadoAKernel(globalsCpu.ProcesoActual.Pc, cod_op, variables)
+		LimpiarProceso(proceso.Pid)
+		EnviarResultadoAKernel(proceso.Pc, cod_op, variables)
 		return
 	default:
 		clientUtils.Logger.Error("Error, instruccion no reconocida")
@@ -378,7 +432,7 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 			}
 			return
 		} else {
-			clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Cache MISS", pid, pagina))
+			//clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Cache MISS", pid, pagina))
 		}
 	}
 
@@ -415,10 +469,11 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 	// Traducir dirección lógica a física
 	pagina := mmuUtils.ObtenerNumeroDePagina(direccionLogica)
 
-	if globalsCpu.CpuConfig.CacheEntries > 0 {
+	if globalsCpu.CpuConfig.CacheEntries != 0 {
 		_, encontroDato := cacheUtils.BuscarPaginaEnCache(pid, pagina)
 		if encontroDato {
-			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d, Contenido %s → Cache HIT", pid, pagina, dato))
+			//Logs en buscarPaginaEnCache
+			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache HIT - Página %d, Contenido %s", pid, pagina, dato))
 			err := cacheUtils.ModificarContenidoCache(pid, pagina, dato, direccionLogica)
 			if err != nil {
 				clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al modificar contenido en cache: %s", err))
@@ -427,7 +482,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 				return
 			}
 		} else {
-			clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d → Cache MISS", pid, pagina))
+			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache MISS - Página %d", pid, pagina))
 			cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato))
 			return
 		}
@@ -439,19 +494,19 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		return
 	}
 
-	//Log
-	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", globalsCpu.ProcesoActual.Pid, pagina, marco))
-
 	consultaWrite(pid, marco, direccionLogica, []byte(dato))
+
+	//Log
+	//clientUtils.Logger.Info(fmt.Sprintf("PID: %d - OBTENER MARCO - Página: %d - Marco: %d", proceso.Pid, pagina, marco))
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		// Agregar a la caché
 		cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato))
-		clientUtils.Logger.Info(fmt.Sprintf("WRITE - PID: %d, Página %d → Agregando a caché", pid, pagina))
+		clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache Add - Página %d", pid, pagina))
 	}
 
 	// Log
-	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: WRITE - Dirección Física: %d - Valor: %s.", pid, marco, dato))
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Escribir - Dirección Física: %d - Valor: %s.", pid, marco, dato))
 
 }
 
@@ -547,7 +602,7 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 		)
 
 		if respuesta == nil {
-			return nil, fmt.Errorf("Valor recibido nulo")
+			return nil, fmt.Errorf("valor recibido nulo")
 		}
 		return respuesta, nil
 	}
@@ -585,8 +640,8 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 func LimpiarProceso(pid int) {
 	//Paso los datos de la cache que fueron modificados a memoria
 	// Luego limpio el cache y luego la TLB
-	if globalsCpu.CpuConfig.CacheEntries > 0 {
-		clientUtils.Logger.Info("Cache detectada, se flushearan las paginas modificadas a la memoria")
+	if globalsCpu.CpuConfig.CacheEntries != 0 {
+		//clientUtils.Logger.Info("Cache detectada, se flushearan las paginas modificadas a la memoria")
 		cacheUtils.FlushPaginasModificadas(pid)
 		cacheUtils.LimpiarCache()
 	}

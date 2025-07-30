@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
 	tlbUtils "github.com/sisoputnfrba/tp-golang/cpu/tlb"
@@ -37,6 +38,7 @@ func ObtenerMarcoMultinivel(pid int, direccionLogica int, niveles int, entradasP
 	for nivel := 1; nivel <= niveles; nivel++ {
 		entrada := CalcularEntradaNivel(nroPagina, nivel, entradasPorTabla, niveles)
 		valores = append(valores, strconv.Itoa(entrada))
+		time.Sleep(1000)
 	}
 
 	desplazamiento := strconv.Itoa(ObtenerDesplazamiento(direccionLogica))
@@ -45,7 +47,7 @@ func ObtenerMarcoMultinivel(pid int, direccionLogica int, niveles int, entradasP
 
 	paquete := clientUtils.Paquete{Valores: valores}
 
-	clientUtils.Logger.Debug("Paquete a enviar en accederMarcoUsuario", "paquete", paquete)
+	//clientUtils.Logger.Debug("Paquete a enviar en accederMarcoUsuario", "paquete", paquete)
 
 	resBytes := clientUtils.EnviarPaqueteConRespuestaBody(
 		globalsCpu.CpuConfig.IpMemory,
