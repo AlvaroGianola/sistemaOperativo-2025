@@ -21,11 +21,12 @@ func BuscarPaginaEnCache(pid int, pagina int) ([]byte, bool) {
 			//CACHE DELAY
 			globalsCpu.Cache[i].Uso = true
 			time.Sleep(time.Duration(globalsCpu.CpuConfig.CacheDelay))
+			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache HIT - Pagina: %d", pid, pagina))
 			return entrada.Contenido, true
 		}
 	}
 
-	//clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache MISS - Pagina: %d", pid, pagina))
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache MISS - Pagina: %d", pid, pagina))
 	return nil, false
 }
 
@@ -76,7 +77,7 @@ func buscarEspacioLibrePagina(pid int, contenido []byte) int {
 	return espacioLibre
 }
 
-func AgregarACache(pid int, direccionLogica int, dato []byte) {
+func AgregarACache(pid int, direccionLogica int, dato []byte, modifica bool) {
 	if dato == nil {
 		return
 	}
@@ -116,23 +117,23 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 		Pagina:     pagina,
 		Contenido:  paginaCompleta,
 		Uso:        true,
-		Modificado: true,
+		Modificado: modifica,
 	}
 
 	if len(globalsCpu.Cache) < globalsCpu.CpuConfig.CacheEntries {
 		globalsCpu.Cache = append(globalsCpu.Cache, nuevaEntrada)
 		clientUtils.Logger.Info(fmt.Sprintf("PID %d - Cache Add - Página %d", pid, pagina))
 	} else {
-		/*
-			for i := range globalsCpu.CpuConfig.CacheEntries {
-				clientUtils.Logger.Debug("Paginas en cache con uso y modificado", "Pagina", globalsCpu.Cache[i].Pagina, "Uso", globalsCpu.Cache[i].Uso, "Modificado", globalsCpu.Cache[i].Modificado)
-			}*/
+
+		for i := range globalsCpu.CpuConfig.CacheEntries {
+			clientUtils.Logger.Debug("Paginas en cache con uso y modificado", "Pagina", globalsCpu.Cache[i].Pagina, "Uso", globalsCpu.Cache[i].Uso, "Modificado", globalsCpu.Cache[i].Modificado)
+		}
 		//clientUtils.Logger.Debug("Puntero en : ", "Puntero", globalsCpu.PunteroClock)
 		switch strings.ToLower(globalsCpu.CpuConfig.CacheReplacment) {
 		case "clock":
 			reemplazarPorClock(nuevaEntrada)
 		case "clock-m":
-			reemplazarPorClockM(nuevaEntrada, pid, direccionLogica, dato)
+			reemplazarPorClockM(nuevaEntrada, pid, direccionLogica)
 		default:
 			clientUtils.Logger.Error("Algoritmo de reemplazo de cache no reconocido")
 		}
@@ -141,7 +142,7 @@ func AgregarACache(pid int, direccionLogica int, dato []byte) {
 	// Si el contenido se desbordó a otra página, escribimos el resto recursivamente
 	if sePasa {
 		nuevaDireccion := direccionLogica + bytesACopiar
-		AgregarACache(pid, nuevaDireccion, restante)
+		AgregarACache(pid, nuevaDireccion, restante, modifica)
 	}
 }
 
@@ -176,57 +177,50 @@ func reemplazarPorClock(nuevaEntrada globalsCpu.EntradaCache) {
 	}
 }
 
-func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccionLogica int, dato []byte) {
-	cantidadEntradas := len(globalsCpu.Cache)
+func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccionLogica int) {
+	cantidad := len(globalsCpu.Cache)
 	marco, err := mmuUtils.ObtenerMarco(pid, direccionLogica)
 
 	if err != nil {
-		clientUtils.Logger.Error("Error al obtener el marco")
+		clientUtils.Logger.Error("error al obtener el marco")
 	}
 
-	// Primer intento: Uso = false && Modificado = false
-	for i := 0; i < cantidadEntradas; i++ {
+	// Fase 1: Buscar Uso=false y Modificado=false
+	for i := 0; i < cantidad; i++ {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
 		if !actual.Uso && !actual.Modificado {
+			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 1 - Reemplazo limpio de página %d", actual.Pagina))
 			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
 			avanzarPuntero()
 			return
 		}
-		actual.Uso = false
+		if actual.Uso {
+			actual.Uso = false
+		}
 		avanzarPuntero()
 	}
 
-	// Segundo intento: Uso = false && Modificado = true, limpiando Uso en el camino
-	for i := 0; i < cantidadEntradas; i++ {
+	// Fase 2: Buscar Uso=false y Modificado=true → escribir antes
+	for i := 0; i < cantidad; i++ {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
 		if !actual.Uso && actual.Modificado {
+			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 2 - Reemplazo de página modificada %d", actual.Pagina))
+			consultaWrite(actual.Pid, marco, actual.Pagina*globalsCpu.Memoria.TamanioPagina, actual.Contenido)
 			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
 			avanzarPuntero()
 			return
 		}
-		actual.Modificado = false
-		consultaWrite(pid, marco, direccionLogica, dato)
 		avanzarPuntero()
 	}
 
-	// Tercer intento: después de limpiar Uso, alguna debería ser candidata
-	for i := 0; i < cantidadEntradas; i++ {
-		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
-		if !actual.Uso && !actual.Modificado {
-			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
-			avanzarPuntero()
-			return
-		}
-		actual.Uso = false
-		avanzarPuntero()
+	// Fallback: reemplazá lo que sea
+	actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+	clientUtils.Logger.Warn(fmt.Sprintf("CLOCK-M FASE 3 - Forzado reemplazo de página %d", actual.Pagina))
+	if actual.Modificado {
+		consultaWrite(actual.Pid, marco, actual.Pagina*globalsCpu.Memoria.TamanioPagina, actual.Contenido)
 	}
-
-	// Cuarta vuelta (ya sin Uso): tomá la primera que encuentres
-	for i := 0; i < cantidadEntradas; i++ {
-		reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
-		avanzarPuntero()
-		return
-	}
+	reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+	avanzarPuntero()
 }
 
 func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
