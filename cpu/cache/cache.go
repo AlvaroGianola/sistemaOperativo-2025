@@ -217,7 +217,7 @@ func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccio
 	for i := 0; i < cantidad; i++ {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
 		if !actual.Uso && !actual.Modificado {
-			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 1 - Reemplazo limpio de página %d", actual.Pagina))
+			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 3 - Reemplazo limpio de página %d", actual.Pagina))
 			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
 			avanzarPuntero()
 			return
@@ -230,7 +230,7 @@ func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccio
 	for i := 0; i < cantidad; i++ {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
 		if !actual.Uso && actual.Modificado {
-			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 2 - Reemplazo de página modificada %d", actual.Pagina))
+			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 4 - Reemplazo de página modificada %d", actual.Pagina))
 			consultaWrite(actual.Pid, marco, actual.Pagina*globalsCpu.Memoria.TamanioPagina, actual.Contenido)
 			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
 			avanzarPuntero()
