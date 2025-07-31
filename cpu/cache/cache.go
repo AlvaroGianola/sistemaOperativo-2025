@@ -375,6 +375,8 @@ func consultaRead(pid int, marco int) ([]byte, error) {
 		paquete,
 	)
 
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco, string(paginaCompleta)))
+
 	if len(paginaCompleta) != pageSize {
 		return nil, fmt.Errorf("tamaño de página recibido incorrecto")
 	}
@@ -401,6 +403,8 @@ func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error 
 		paqueteLeer,
 	)
 
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco, string(paginaCompleta)))
+
 	if len(paginaCompleta) != pageSize {
 		return fmt.Errorf("no se pudo leer página completa antes de escribir")
 	}
@@ -425,6 +429,8 @@ func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error 
 		"writePagina",
 		paquete,
 	)
+
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco, string(datos)))
 
 	return nil
 }

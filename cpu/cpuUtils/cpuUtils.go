@@ -494,9 +494,6 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache Add - Página %d", pid, pagina))
 	}
 
-	// Log
-	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Escribir - Dirección Física: %d - Valor: %s.", pid, marco, dato))
-
 }
 
 func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error {
@@ -504,6 +501,8 @@ func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error 
 	desplazamiento := mmuUtils.ObtenerDesplazamiento(direccionLogica)
 
 	if len(datos) == 1 {
+		datosStr := string(datos[0])
+		clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Escribir - Dirección Física: %d - Valor: %s.", pid, marco*pageSize+desplazamiento, datosStr))
 		valores := []string{
 			strconv.Itoa(pid),
 			strconv.Itoa(marco*pageSize + desplazamiento),
@@ -544,6 +543,8 @@ func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error 
 		paqueteLeer,
 	)
 
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco, paginaCompleta[desplazamiento:]))
+
 	if len(paginaCompleta) != pageSize {
 		return fmt.Errorf("no se pudo leer página completa antes de escribir")
 	}
@@ -561,6 +562,8 @@ func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error 
 		valores = append(valores, strconv.Itoa(int(b)))
 	}
 	paquete := clientUtils.Paquete{Valores: valores}
+
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Escribir - Dirección Física: %d - Valor: %s.", pid, marco, string(datos)))
 
 	clientUtils.EnviarPaquete(
 		globalsCpu.CpuConfig.IpMemory,
@@ -593,6 +596,9 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 		if respuesta == nil {
 			return nil, fmt.Errorf("valor recibido nulo")
 		}
+
+		clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco*pageSize+desplazamiento, string(respuesta)))
+
 		return respuesta, nil
 	}
 
@@ -610,6 +616,8 @@ func consultaRead(pid int, marco int, direccionLogica int, tamanio int) ([]byte,
 		"readPagina",
 		paquete,
 	)
+
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco, respuesta[desplazamiento:desplazamiento+tamanio]))
 
 	if len(respuesta) != pageSize {
 		clientUtils.Logger.Error(fmt.Sprintf("READ - Tamaño de página recibido incorrecto: esperado %d, recibido %d", pageSize, len(respuesta)))
