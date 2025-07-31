@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
@@ -141,17 +140,7 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	/*
-		// ⚠️ Bloqueo crítico: proteger con mutex para evitar que entren dos a la vez
-		ejecutandoMutex.Lock()
-		if ejecutando {
-			clientUtils.Logger.Warn("Ya hay un proceso en ejecución. Ignorando nuevo ingreso.")
-			ejecutandoMutex.Unlock()
-			http.Error(w, "CPU ocupada", http.StatusConflict)
-			return
-		}
-		ejecutando = true
-		ejecutandoMutex.Unlock()*/
+
 	if pid != int(PIDAnterior.Load()) && UltimaSycall != "INIT_PROC" {
 		globalsCpu.Interrupciones.ExisteInterrupcion = false
 		globalsCpu.Interrupciones.Motivo = ""
@@ -319,7 +308,7 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 	switch cod_op {
 	case NOOP:
 		//clientUtils.Logger.Info("## Ejecutando NOOP")
-		time.Sleep(2 * time.Second)
+		//time.Sleep(2 * time.Second)
 		proceso.Pc++
 		return true
 

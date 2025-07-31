@@ -877,7 +877,11 @@ type SRTScheduler struct {
 }
 
 func (s SRTScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
+	clientUtils.Logger.Info("voy a selecionar proximo a ejecutar")
+
 	if pcp.readyState.Vacia() {
+		// si no usaste el recurso lo liberas
+		sem_cpusLibres <- 1
 		return
 	}
 
@@ -935,7 +939,7 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso *PCB) {
 		go pcp.schedulerEstrategy.intentarDesalojo(pcp, proceso)
 	}
 	<-sem_cpusLibres
-
+	clientUtils.Logger.Info("LIBERE UNA CPU")
 	pcp.schedulerEstrategy.selecionarProximoAEjecutar(pcp)
 }
 
@@ -1190,14 +1194,14 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: DUMP_MEMORY", proceso.PID))
 		go ManejarMemoryDump(proceso)
 		cpusLibres.Agregar(cpusOcupadas.SacarPorID(cpu.Identificador))
-
 		sem_cpusLibres <- 1
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "IO" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Solicitó syscall: IO", proceso.PID))
 		go manejarIo(respuesta, proceso)
-		sem_cpusLibres <- 1
 		cpusLibres.Agregar(cpusOcupadas.SacarPorID(cpu.Identificador))
+		sem_cpusLibres <- 1
+		clientUtils.Logger.Debug(fmt.Sprintf("DESPUES DE IO LIBERE CPU: %s", cpu.Identificador))
 
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DESALOJO" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Desalojado por algoritmo SJF/SRT", proceso.PID))
@@ -1270,6 +1274,7 @@ func manejarIo(respuesta serverUtils.Paquete, proceso *PCB) {
 		ioDesocupada, ok := grupoIo.ObtenerIoLibre()
 		if !ok {
 			grupoIo.AgregarPedido(PedidoIo{PID: proceso.PID, time: time})
+			clientUtils.Logger.Info(fmt.Sprintf(`## (%d) - Lo agregue a los pedidos de la IO: %s`, proceso.PID, nombre))
 		} else {
 			ioDesocupada.enviarProceso(proceso.PID, time)
 		}
