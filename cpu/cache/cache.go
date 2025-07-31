@@ -179,66 +179,47 @@ func reemplazarPorClock(nuevaEntrada globalsCpu.EntradaCache) {
 
 func reemplazarPorClockM(nuevaEntrada globalsCpu.EntradaCache, pid int, direccionLogica int) {
 	cantidad := len(globalsCpu.Cache)
-	marco, err := mmuUtils.ObtenerMarco(pid, direccionLogica)
+	pageSize := globalsCpu.Memoria.TamanioPagina
 
-	if err != nil {
-		clientUtils.Logger.Error("error al obtener el marco")
-	}
-
-	// Fase 1: Buscar Uso=false y Modificado=false
-	for i := 0; i < cantidad; i++ {
-		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
-		if !actual.Uso && !actual.Modificado {
-			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 1 - Reemplazo limpio de página %d", actual.Pagina))
-			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+	for {
+		// FASE 1: Buscar Uso = false && Modificado = false
+		for i := 0; i < cantidad; i++ {
+			actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+			if !actual.Uso && !actual.Modificado {
+				clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 1 - Reemplazo limpio de página %d", actual.Pagina))
+				reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+				avanzarPuntero()
+				return
+			}
 			avanzarPuntero()
-			return
 		}
-		avanzarPuntero()
-	}
 
-	// Fase 2: Buscar Uso=false y Modificado=true → escribo antes (Si su Uso=true lo setteo en false)
-	for i := 0; i < cantidad; i++ {
-		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
-		if !actual.Uso && actual.Modificado {
-			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 2 - Reemplazo de página modificada %d", actual.Pagina))
-			consultaWrite(actual.Pid, marco, actual.Pagina*globalsCpu.Memoria.TamanioPagina, actual.Contenido)
-			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+		// FASE 2: Buscar Uso = false && Modificado = true
+		for i := 0; i < cantidad; i++ {
+			actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+			if !actual.Uso && actual.Modificado {
+				direccionLogicaActual := actual.Pagina * pageSize
+				marco, err := mmuUtils.ObtenerMarco(actual.Pid, direccionLogicaActual)
+				if err != nil {
+					clientUtils.Logger.Error(fmt.Sprintf("No se pudo obtener marco para página %d al hacer write", actual.Pagina))
+				} else {
+					clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 2 - Reemplazo de página modificada %d", actual.Pagina))
+					consultaWrite(actual.Pid, marco, direccionLogicaActual, actual.Contenido)
+				}
+				reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+				avanzarPuntero()
+				return
+			}
 			avanzarPuntero()
-			return
-		} else if !actual.Uso {
-			actual.Uso = true
 		}
-		avanzarPuntero()
-	}
 
-	// Si no encuentro ninguno con Uso=false y Modificado=true Vuelvo a hacer fase 1
-	// Fase 3: Buscar Uso=false y Modificado=false
-	for i := 0; i < cantidad; i++ {
-		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
-		if !actual.Uso && !actual.Modificado {
-			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 3 - Reemplazo limpio de página %d", actual.Pagina))
-			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
+		// FASE 3: Limpiar todos los bits de Uso
+		clientUtils.Logger.Debug("CLOCK-M FASE 3 - Limpiando todos los bits de uso")
+		for i := 0; i < cantidad; i++ {
+			globalsCpu.Cache[globalsCpu.PunteroClock].Uso = false
 			avanzarPuntero()
-			return
 		}
-		avanzarPuntero()
-	}
-
-	// Vuelvo a hacer fase 2
-	// Fase 4: Buscar Uso=false y Modificado=true → escribir antes y reemplazar(Si o si tiene que haber 1)
-	for i := 0; i < cantidad; i++ {
-		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
-		if !actual.Uso && actual.Modificado {
-			clientUtils.Logger.Debug(fmt.Sprintf("CLOCK-M FASE 4 - Reemplazo de página modificada %d", actual.Pagina))
-			consultaWrite(actual.Pid, marco, actual.Pagina*globalsCpu.Memoria.TamanioPagina, actual.Contenido)
-			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
-			avanzarPuntero()
-			return
-		} else if !actual.Uso {
-			actual.Uso = true
-		}
-		avanzarPuntero()
+		// Volver al inicio (fase 1)
 	}
 }
 
