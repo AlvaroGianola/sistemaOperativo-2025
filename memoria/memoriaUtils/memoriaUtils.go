@@ -293,6 +293,7 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	// Acceder recursivamente a las tablas de páginas si hay mas de un nivel
 
 	for nivel := 0; nivel < len(movimientos)-1; nivel++ {
+		time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 		mov := movimientos[nivel]
 		tabla, ok := actual.Entradas[mov].(*globalsMemoria.TablaPaginas)
 		if !ok {
@@ -316,7 +317,6 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	direccionFisica := pagina.Marco
 	clientUtils.Logger.Info("Marco de usuario accedido", "pid", pid, "marco", direccionFisica)
 
-	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(strconv.Itoa(direccionFisica)))
 }
@@ -377,6 +377,8 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 
 	proceso.Metricas.LecturasDeMemoria++
 	clientUtils.Logger.Info("Página leída", "pid", pid, "marco", marco)
+
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(contenido)
@@ -455,6 +457,9 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proceso.Metricas.EscriturasDeMemoria++
+
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
+
 	clientUtils.Logger.Info("Página escrita", "pid", pid, "marco", marco)
 
 	w.WriteHeader(http.StatusOK)
@@ -462,6 +467,7 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 
 func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para leer dirección física recibida desde CPU")
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 
@@ -490,6 +496,7 @@ func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 	contenido := globalsMemoria.MemoriaUsuario[direccionFisica]
 	// Simulamos la escritura de la dirección física
 	proceso.Metricas.LecturasDeMemoria++
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte{contenido})
 
@@ -497,6 +504,7 @@ func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 
 func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("[Memoria] Petición para escribir dirección física recibida desde CPU")
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 
@@ -627,6 +635,8 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	proceso.Metricas.BajadasASwap++
 	clientUtils.Logger.Info("Proceso suspendido", "pid", pid, "bytes_escritos", len(paginas), "offset", offset)
 
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.SwapDelay) * time.Millisecond)
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Proceso suspendido exitosamente"))
 }
@@ -680,6 +690,8 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proceso.Metricas.SubidasAMemoria++
+
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.SwapDelay) * time.Millisecond)
 
 	clientUtils.Logger.Info("Proceso desuspendido exitosamente:", "pid", pid)
 	w.WriteHeader(http.StatusOK)
