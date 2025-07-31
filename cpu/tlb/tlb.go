@@ -39,9 +39,9 @@ func AgregarATLB(pid int, pagina int, marco int) {
 
 func BuscarEntradaMasVieja() int {
 	masVieja := 0
-	clientUtils.Logger.Debug("Estado de tlbs", "pagina", globalsCpu.Tlb[masVieja].Pagina, "InstanteCarga", globalsCpu.Tlb[masVieja].InstanteCargado)
+	//clientUtils.Logger.Debug("Estado de tlbs", "pagina", globalsCpu.Tlb[masVieja].Pagina, "InstanteCarga", globalsCpu.Tlb[masVieja].InstanteCargado)
 	for i := 1; i < len(globalsCpu.Tlb); i++ {
-		clientUtils.Logger.Debug("Estado de tlbs", "pagina", globalsCpu.Tlb[i].Pagina, "InstanteCarga", globalsCpu.Tlb[i].InstanteCargado)
+		//clientUtils.Logger.Debug("Estado de tlbs", "pagina", globalsCpu.Tlb[i].Pagina, "InstanteCarga", globalsCpu.Tlb[i].InstanteCargado)
 		if globalsCpu.Tlb[i].InstanteCargado.Before(globalsCpu.Tlb[masVieja].InstanteCargado) {
 			masVieja = i
 		}
