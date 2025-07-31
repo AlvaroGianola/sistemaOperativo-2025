@@ -768,14 +768,14 @@ func (plp *PlanificadorLargoPlazo) EnviarPedidoMemoria(nuevoProceso *PCB) bool {
 
 	// Validamos la respuesta (por ahora asumimos éxito si hay respuesta 200 OK)
 	if resp != nil && resp.StatusCode == http.StatusOK {
-		clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d enviado a Memoria correctamente", nuevoProceso.PID))
+		//clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d enviado a Memoria correctamente", nuevoProceso.PID))
 		return true
 	}
 
 	if resp == nil {
 		clientUtils.Logger.Warn(fmt.Sprintf("Error de conexión al tratar de inicializar el proceso PID %d (respuesta nula)", nuevoProceso.PID))
 	} else {
-		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la iniciacion del proceso PID %d por espacio insuficiente. Status: %s", nuevoProceso.PID, resp.Status))
+		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la iniciacion del proceso PID %d por espacio insuficiente.", nuevoProceso.PID))
 	}
 	return false
 }
@@ -795,7 +795,7 @@ func (plp *PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado *
 	//Usamos EnviarPaqueteConRespuesta que devuelve la respuesta del servidor
 	resp := clientUtils.EnviarPaqueteConRespuesta(ip, puerto, endpoint, paquete)
 	if resp != nil && resp.StatusCode == http.StatusOK {
-		clientUtils.Logger.Info(fmt.Sprintf("Memoria aceptó finalización de Proceso PID %d", procesoTernminado.PID))
+		//clientUtils.Logger.Info(fmt.Sprintf("Memoria aceptó finalización de Proceso PID %d", procesoTernminado.PID))
 		return true
 	}
 
@@ -803,7 +803,7 @@ func (plp *PlanificadorLargoPlazo) EnviarFinalizacionMemoria(procesoTernminado *
 	if resp == nil {
 		clientUtils.Logger.Warn(fmt.Sprintf("Error de conexión al finalizar el proceso PID %d (respuesta nula)", procesoTernminado.PID))
 	} else {
-		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la finalización del proceso PID %d. Status: %s", procesoTernminado.PID, resp.Status))
+		clientUtils.Logger.Warn(fmt.Sprintf("Memoria rechazó la finalización del proceso PID %d.", procesoTernminado.PID))
 	}
 	return false
 }
@@ -877,8 +877,6 @@ type SRTScheduler struct {
 }
 
 func (s SRTScheduler) selecionarProximoAEjecutar(pcp *PlanificadorCortoPlazo) {
-	clientUtils.Logger.Info("voy a selecionar proximo a ejecutar")
-
 	if pcp.readyState.Vacia() {
 		// si no usaste el recurso lo liberas
 		sem_cpusLibres <- 1
@@ -908,7 +906,6 @@ func (s SRTScheduler) intentarDesalojo(pcp *PlanificadorCortoPlazo, procesoNuevo
 		proceso.estaSiendoDesalojado.Store(true)
 		procesoNuevo.pidioDesalojo.Store(true)
 		go cpu.enviarInterrupcion("DESALOJO")
-		clientUtils.Logger.Info(fmt.Sprintf("El proceso: %d solicito desalojo para el proceso %d que estaba ejecutando en: %s", procesoNuevo.PID, proceso.PID, cpu.Identificador))
 		<-cpu.sem_interrupcionAtendida
 		procesoSelecionado, ok := pcp.readyState.BuscarYSacarPorPID(procesoNuevo.PID)
 		if !ok {
@@ -916,8 +913,6 @@ func (s SRTScheduler) intentarDesalojo(pcp *PlanificadorCortoPlazo, procesoNuevo
 			return
 		}
 		procesoNuevo.pidioDesalojo.Store(false)
-		clientUtils.Logger.Info(fmt.Sprintf("El proceso: %d esta por mandarse a ejecutar a la cpu: %s despues del desalojo", procesoNuevo.PID, cpu.Identificador))
-
 		pcp.ejecutarConDesalojo(procesoSelecionado, cpu)
 	}
 }
@@ -939,7 +934,6 @@ func (pcp *PlanificadorCortoPlazo) RecibirProceso(proceso *PCB) {
 		go pcp.schedulerEstrategy.intentarDesalojo(pcp, proceso)
 	}
 	<-sem_cpusLibres
-	clientUtils.Logger.Info("LIBERE UNA CPU")
 	pcp.schedulerEstrategy.selecionarProximoAEjecutar(pcp)
 }
 
@@ -947,7 +941,6 @@ func (pcp *PlanificadorCortoPlazo) ejecutar(proceso *PCB) {
 	CPUlibre := cpusLibres.SacarProxima()
 	// Log de cambio de estado READY -> EXEC
 	clientUtils.Logger.Info(fmt.Sprintf("## (%d) Pasa del estado READY al estado EXEC", proceso.PID))
-	clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Ejecutando en CPU: %s", proceso.PID, CPUlibre.Identificador))
 	// Actualizamos el tiempo de entrada al estado EXEC
 
 	proceso.timeInCurrentState = time.Now()
@@ -1048,7 +1041,6 @@ func (pmp *PlanificadorMedianoPlazo) EnviarProcesoASuspReady(proceso *PCB) {
 	proceso.ME.suspReadyCount++
 
 	if Pmp.suspReadyState.Vacia() {
-		clientUtils.Logger.Info(fmt.Sprintf("## (%d) Se intenta inicializar", proceso.PID))
 		pmp.intentarInicializar(proceso)
 	} else {
 		pmp.suspReadyEstrategy.manejarIngresoDeProceso(proceso, pmp)
@@ -1091,7 +1083,7 @@ func (pmp *PlanificadorMedianoPlazo) EnviarDesSuspensionPedidoMemoria(proceso *P
 
 	// Validamos la respuesta (por ahora asumimos éxito si hay respuesta 200 OK)
 	if resp != nil && resp.StatusCode == http.StatusOK {
-		clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d des-suspendido correctamente", proceso.PID))
+		//clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d des-suspendido correctamente", proceso.PID))
 		return true
 	}
 
@@ -1201,14 +1193,10 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		go manejarIo(respuesta, proceso)
 		cpusLibres.Agregar(cpusOcupadas.SacarPorID(cpu.Identificador))
 		sem_cpusLibres <- 1
-		clientUtils.Logger.Debug(fmt.Sprintf("DESPUES DE IO LIBERE CPU: %s", cpu.Identificador))
-
 	} else if respuesta.Valores[MOTIVO_DEVOLUCION] == "DESALOJO" {
 		clientUtils.Logger.Info(fmt.Sprintf("## (%d) - Desalojado por algoritmo SJF/SRT", proceso.PID))
 		go Plp.pcp.RecibirProceso(proceso)
 		cpu.sem_interrupcionAtendida <- struct{}{}
-		clientUtils.Logger.Info(fmt.Sprintf("ATENDI LA INTERRUPCION CPU: %s", cpu.Identificador))
-
 	} else {
 		clientUtils.Logger.Error("Error, motivo de devolución de proceso desconocido")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -1235,7 +1223,7 @@ func EnviarMemoryDump(PID uint) bool {
 
 	// Validamos la respuesta (por ahora asumimos éxito si hay respuesta 200 OK)
 	if resp != nil && resp.StatusCode == http.StatusOK {
-		clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d realizo correctamente un memory dump", PID))
+		//clientUtils.Logger.Info(fmt.Sprintf("Proceso PID %d realizo correctamente un memory dump", PID))
 		return true
 	}
 
@@ -1274,12 +1262,11 @@ func manejarIo(respuesta serverUtils.Paquete, proceso *PCB) {
 		ioDesocupada, ok := grupoIo.ObtenerIoLibre()
 		if !ok {
 			grupoIo.AgregarPedido(PedidoIo{PID: proceso.PID, time: time})
-			clientUtils.Logger.Info(fmt.Sprintf(`## (%d) - Lo agregue a los pedidos de la IO: %s`, proceso.PID, nombre))
 		} else {
 			ioDesocupada.enviarProceso(proceso.PID, time)
 		}
 	} else {
-		clientUtils.Logger.Error(fmt.Sprintf("No existe ninguna instancia del dispositivo %s", nombre))
+		clientUtils.Logger.Warn(fmt.Sprintf("No existe ninguna instancia del dispositivo %s", nombre))
 		Plp.FinalizarProceso(proceso)
 	}
 }
