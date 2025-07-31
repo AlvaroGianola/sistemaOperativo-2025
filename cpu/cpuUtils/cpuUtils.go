@@ -441,7 +441,7 @@ func readMemoria(pid int, direccionLogica int, tamanio int) {
 	}
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
-		cacheUtils.AgregarACache(pid, direccionLogica, contenido)
+		cacheUtils.AgregarACache(pid, direccionLogica, contenido, false)
 		clientUtils.Logger.Info(fmt.Sprintf("READ - PID: %d, Página %d → Agregando a caché", pid, pagina))
 	}
 
@@ -462,7 +462,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 		_, encontroDato := cacheUtils.BuscarPaginaEnCache(pid, pagina)
 		if encontroDato {
 			//Logs en buscarPaginaEnCache
-			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache HIT - Página %d, Contenido %s", pid, pagina, dato))
+			//clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache HIT - Página %d, Contenido %s", pid, pagina, dato))
 			err := cacheUtils.ModificarContenidoCache(pid, pagina, dato, direccionLogica)
 			if err != nil {
 				clientUtils.Logger.Error(fmt.Sprintf("WRITE - Error al modificar contenido en cache: %s", err))
@@ -472,7 +472,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 			}
 		} else {
 			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache MISS - Página %d", pid, pagina))
-			cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato))
+			cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato), true)
 			return
 		}
 	}
@@ -490,7 +490,7 @@ func writeMemoria(pid int, direccionLogica int, dato string) {
 
 	if globalsCpu.CpuConfig.CacheEntries > 0 {
 		// Agregar a la caché
-		cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato))
+		cacheUtils.AgregarACache(pid, direccionLogica, []byte(dato), true)
 		clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Cache Add - Página %d", pid, pagina))
 	}
 
