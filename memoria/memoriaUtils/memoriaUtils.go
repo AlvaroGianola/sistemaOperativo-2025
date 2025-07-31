@@ -313,7 +313,7 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se encontró la página", http.StatusInternalServerError)
 		return
 	}
-
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 	direccionFisica := pagina.Marco
 	clientUtils.Logger.Info("Marco de usuario accedido", "pid", pid, "marco", direccionFisica)
 
