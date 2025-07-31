@@ -51,7 +51,9 @@ func BuscarEntradaMasVieja() int {
 
 func BuscarEntradaMenosUsada() int {
 	menosUsada := 0
+	//clientUtils.Logger.Debug("Estado de tlbs", "pagina", globalsCpu.Tlb[menosUsada].Pagina, "InstanteCarga", globalsCpu.Tlb[menosUsada].InstanteCargado)
 	for i := 1; i < len(globalsCpu.Tlb); i++ {
+		//clientUtils.Logger.Debug("Estado de tlbs", "pagina", globalsCpu.Tlb[i].Pagina, "InstanteCarga", globalsCpu.Tlb[i].InstanteCargado)
 		if globalsCpu.Tlb[i].UltimoUso.Before(globalsCpu.Tlb[menosUsada].UltimoUso) {
 			menosUsada = i
 		}

@@ -153,26 +153,30 @@ func avanzarPuntero() {
 func reemplazarPorClock(nuevaEntrada globalsCpu.EntradaCache) {
 	cantidadEntradas := len(globalsCpu.Cache)
 
-	// Primera vuelta: buscar Uso = false
+	// Primera vuelta: limpia Uso en las páginas con Uso == true, y reemplaza si encuentra Uso == false
 	for i := 0; i < cantidadEntradas; i++ {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+
 		if !actual.Uso {
 			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
 			avanzarPuntero()
 			return
 		}
+
 		actual.Uso = false
 		avanzarPuntero()
 	}
 
-	// Segunda vuelta: ahora alguna tendrá Uso = false
+	// Segunda vuelta: ahora alguna tendrá Uso == false
 	for i := 0; i < cantidadEntradas; i++ {
 		actual := &globalsCpu.Cache[globalsCpu.PunteroClock]
+
 		if !actual.Uso {
 			reemplazarEntradaCache(globalsCpu.PunteroClock, nuevaEntrada)
 			avanzarPuntero()
 			return
 		}
+
 		avanzarPuntero()
 	}
 }
