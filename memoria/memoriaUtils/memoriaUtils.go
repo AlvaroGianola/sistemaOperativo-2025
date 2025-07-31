@@ -208,6 +208,8 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 
 	instruccion := proceso.Instrucciones[pc]
 
+	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
+
 	clientUtils.Logger.Info("Instrucción siguiente:", "pid", pid, "pc", pc, "instrucción", instruccion)
 
 	proceso.Metricas.InstruccionesSolicitadas++
