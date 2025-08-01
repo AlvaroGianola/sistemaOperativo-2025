@@ -115,6 +115,14 @@ func (cpu *Cpu) enviarInterrupcion(motivo string) {
 	clientUtils.EnviarPaquete(cpu.Ip, cpu.Puerto, endpoint, paquete)
 }
 
+func (cpu *Cpu) enviarFinInitProc() {
+	valores := []string{}
+	paquete := clientUtils.Paquete{Valores: valores}
+	endpoint := "finSyscallInitProc"
+
+	clientUtils.EnviarPaquete(cpu.Ip, cpu.Puerto, endpoint, paquete)
+}
+
 type CpuList struct {
 	cpus []*Cpu
 	mu   sync.Mutex
@@ -1172,7 +1180,7 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 		}
 		proceso.timeInCurrentState = time.Now()
 		Plp.pcp.execState.Agregar(proceso)
-		go cpu.enviarProceso(proceso.PID, proceso.PC)
+		go cpu.enviarFinInitProc()
 
 		go IniciarProceso(respuesta.Valores[FILE_PATH], uint(tamProc))
 

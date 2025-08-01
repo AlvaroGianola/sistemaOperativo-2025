@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
@@ -46,6 +47,7 @@ var UltimaSycall string
 var mutexUltimaSycall sync.Mutex
 var cancelProcesoActual context.CancelFunc
 var ctxMutex sync.Mutex
+var semSycallInitProc = make(chan struct{})
 
 // Representa un proceso con su PID y su Program Counter (PC)
 type Proceso struct {
@@ -120,6 +122,11 @@ func ObtenerInfoMemoria() {
 	)*/
 }
 
+func FinSycall(w http.ResponseWriter, r *http.Request) {
+	semSycallInitProc <- struct{}{}
+	w.WriteHeader(http.StatusOK)
+}
+
 // Recibe un proceso del Kernel y lo loguea
 func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 	paquete := serverUtils.RecibirPaquetes(w, r)
@@ -140,11 +147,11 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-
-	if pid != int(PIDAnterior.Load()) && UltimaSycall != "INIT_PROC" {
-		globalsCpu.Interrupciones.ExisteInterrupcion = false
-		globalsCpu.Interrupciones.Motivo = ""
-	}
+	/*
+		if pid != int(PIDAnterior.Load()) && UltimaSycall != "INIT_PROC" {
+			globalsCpu.Interrupciones.ExisteInterrupcion.Store(false)
+			globalsCpu.Interrupciones.Motivo = ""
+		}*/
 	// Creamos nuevo proceso local, sin depender de globalsCpu.ProcesoActual
 	proceso := &globalsCpu.Proceso{
 		Pid: pid,
@@ -155,7 +162,7 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 	ctxMutex.Lock()
 	// Cancelar ejecución anterior si había
 	if cancelProcesoActual != nil {
-		clientUtils.Logger.Warn("Cancelando ejecución de proceso anterior")
+		//clientUtils.Logger.Warn("Cancelando ejecución de proceso anterior")
 		cancelProcesoActual()
 	}
 
@@ -226,23 +233,22 @@ func HandleProceso(ctx context.Context, proceso *globalsCpu.Proceso) {
 		//clientUtils.Logger.Info("## Ejecutando instrucción")
 		cont := ExecuteInstruccion(proceso, cod_op, variables)
 
-		clientUtils.Logger.Info("## Verificando interrupciones")
-		if globalsCpu.Interrupciones.ExisteInterrupcion {
-			clientUtils.Logger.Info("## Interrupcion recibida")
-			globalsCpu.Interrupciones.ExisteInterrupcion = false
-			EnviarResultadoAKernel(proceso.Pc, globalsCpu.Interrupciones.Motivo, nil)
-			return
-		}
-
-		if !cont {
+		if !cont && cod_op != INIT_PROC {
 			if cod_op == EXIT {
 				clientUtils.Logger.Info("## Proceso finalizado")
 			}
-			// salí SIEMPRE; no sigas chequeando interrupciones ni nada
+			return
+		} else if cod_op == INIT_PROC {
+			<-semSycallInitProc
+		}
+		clientUtils.Logger.Info("## Verificando interrupciones")
+		if globalsCpu.Interrupciones.ExisteInterrupcion.Load() {
+			clientUtils.Logger.Info("## Interrupcion recibida")
+			EnviarResultadoAKernel(proceso.Pc, globalsCpu.Interrupciones.Motivo, nil)
+			globalsCpu.Interrupciones.ExisteInterrupcion.Store(false)
+			globalsCpu.Interrupciones.Motivo = ""
 			return
 		}
-		//#CHECK
-		// le pregunto a kernel si hay una interrupción
 
 	}
 
@@ -251,7 +257,7 @@ func HandleProceso(ctx context.Context, proceso *globalsCpu.Proceso) {
 func RecibirInterrupcion(w http.ResponseWriter, r *http.Request) {
 	clientUtils.Logger.Info("## Llega interrupción al puerto Interrupt")
 	paquete := serverUtils.RecibirPaquetes(w, r)
-	globalsCpu.Interrupciones.ExisteInterrupcion = true
+	globalsCpu.Interrupciones.ExisteInterrupcion.Store(true)
 	globalsCpu.Interrupciones.Motivo = paquete.Valores[0]
 	w.WriteHeader(http.StatusOK)
 }
@@ -308,7 +314,7 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 	switch cod_op {
 	case NOOP:
 		//clientUtils.Logger.Info("## Ejecutando NOOP")
-		//time.Sleep(2 * time.Second)
+		time.Sleep(2 * time.Second)
 		proceso.Pc++
 		return true
 

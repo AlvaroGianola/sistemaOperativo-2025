@@ -2,6 +2,7 @@ package globalscpu
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -50,7 +51,7 @@ type EntradaCache struct {
 }
 
 type Interrupcion struct {
-	ExisteInterrupcion bool
+	ExisteInterrupcion atomic.Bool
 	Motivo             string
 }
 
