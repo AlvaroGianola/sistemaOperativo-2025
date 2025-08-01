@@ -586,8 +586,12 @@ func (p *PCB) timeInState() float64 {
 	return float64(time.Since(p.timeInCurrentState).Microseconds()) / 1000.0
 }
 
-func (p *PCB) calcularProximaEstimacion(rafagaReal float64) {
-	p.estimacion = globalskernel.KernelConfig.Alpha*rafagaReal + (1-globalskernel.KernelConfig.Alpha)*p.estimacion
+func (p *PCB) calcularProximaEstimacion(rafagaReal float64, motivo string) {
+	if motivo != "DESALOJO" {
+		p.estimacion = globalskernel.KernelConfig.Alpha*rafagaReal + (1-globalskernel.KernelConfig.Alpha)*p.estimacion
+	} else {
+		p.estimacion = p.estimacion - rafagaReal
+	}
 }
 
 //---------------- PLANIFICADOR LARGO PLAZO ---------------------------------------------
@@ -1158,7 +1162,7 @@ func ResultadoProcesos(w http.ResponseWriter, r *http.Request) {
 	}
 	tiempoEjecucion := proceso.timeInState()
 	proceso.MT.execTime += tiempoEjecucion
-	proceso.calcularProximaEstimacion(tiempoEjecucion)
+	proceso.calcularProximaEstimacion(tiempoEjecucion, respuesta.Valores[MOTIVO_DEVOLUCION])
 
 	pcActualizado, err := strconv.Atoi(respuesta.Valores[PC])
 	if err != nil {

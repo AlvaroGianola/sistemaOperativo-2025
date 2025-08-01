@@ -4,10 +4,10 @@
     "ip_kernel": "127.0.0.1",
     "port_kernel": 8001,
     "scheduler_algorithm": "SRT",
-    "ready_ingress_algorithm": "FIFO",
-    "alpha": 1,
-    "initial_estimate": 1000,
-    "suspension_time": 120000,
+    "ready_ingress_algorithm": "PMCP",
+    "alpha": 0.75,
+    "initial_estimate": 100,
+    "suspension_time": 3000,
     "log_level": "DEBUG"
 }
 

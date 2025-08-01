@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
 	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
@@ -35,16 +33,6 @@ const (
 	INVALID = "INVALID"
 )
 
-// globalsCpu.go (o donde tengas tus globals)
-/*
-var (
-	ejecutando      = false
-	ejecutandoMutex sync.Mutex
-)*/
-
-var PIDAnterior atomic.Int32
-var UltimaSycall string
-var mutexUltimaSycall sync.Mutex
 var cancelProcesoActual context.CancelFunc
 var ctxMutex sync.Mutex
 var semSycallInitProc = make(chan struct{})
@@ -147,12 +135,6 @@ func RecibirProceso(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	/*
-		if pid != int(PIDAnterior.Load()) && UltimaSycall != "INIT_PROC" {
-			globalsCpu.Interrupciones.ExisteInterrupcion.Store(false)
-			globalsCpu.Interrupciones.Motivo = ""
-		}*/
-	// Creamos nuevo proceso local, sin depender de globalsCpu.ProcesoActual
 	proceso := &globalsCpu.Proceso{
 		Pid: pid,
 		Pc:  pc,
@@ -314,7 +296,7 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 	switch cod_op {
 	case NOOP:
 		//clientUtils.Logger.Info("## Ejecutando NOOP")
-		time.Sleep(2 * time.Second)
+		//time.Sleep(2 * time.Second)
 		proceso.Pc++
 		return true
 
@@ -371,10 +353,6 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 }
 
 func Syscall(proceso *globalsCpu.Proceso, cod_op string, variables []string) {
-	PIDAnterior.Store(int32(proceso.Pid))
-	mutexUltimaSycall.Lock()
-	UltimaSycall = cod_op
-	mutexUltimaSycall.Unlock()
 	switch cod_op {
 	case IO:
 		clientUtils.Logger.Info("## Llamar al sistema para ejecutar IO")
