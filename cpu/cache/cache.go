@@ -318,14 +318,16 @@ func reemplazarEntradaCache(indice int, nueva globalsCpu.EntradaCache) {
 func FlushPaginasModificadas(pid int) {
 	globalsCpu.CacheMutex.Lock()
 	defer globalsCpu.CacheMutex.Unlock()
-
+	pageSize := globalsCpu.Memoria.TamanioPagina
 	for _, entrada := range globalsCpu.Cache {
+		//clientUtils.Logger.Debug("No entra al if", "entrada", entrada.Pid, "pid", pid, "entrada modificada?", entrada.Modificado)
 		if entrada.Pid == pid && entrada.Modificado {
 			marco, err := mmuUtils.ObtenerMarco(entrada.Pid, mmuUtils.ObtenerDireccionLogica(entrada.Pagina))
 			if err != nil {
 				clientUtils.Logger.Error(fmt.Sprintf("No se encontró el marco para la página %d del PID %d", entrada.Pagina, pid))
 				continue
 			}
+			//clientUtils.Logger.Debug("No hay deadlock")
 
 			valores := []string{
 				strconv.Itoa(pid),
@@ -337,14 +339,26 @@ func FlushPaginasModificadas(pid int) {
 			}
 
 			paquete := clientUtils.Paquete{Valores: valores}
+
+			var bytesAEnviar []byte
+			for _, v := range paquete.Valores[3:] {
+				n, err := strconv.Atoi(v)
+				if err != nil {
+					// Si algo falla lo reemplazo por un '?'
+					bytesAEnviar = append(bytesAEnviar, '?')
+					continue
+				}
+				bytesAEnviar = append(bytesAEnviar, byte(n))
+			}
+
+			clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Acción: Escribir - Dirección Física: %d - Valor: %s", pid, marco*pageSize, string(bytesAEnviar)))
+
 			clientUtils.EnviarPaquete(
 				globalsCpu.CpuConfig.IpMemory,
 				globalsCpu.CpuConfig.PortMemory,
 				"writePagina",
 				paquete,
 			)
-
-			clientUtils.Logger.Info(fmt.Sprintf("PID %d - Memory Update - Página %d Marco %d", pid, entrada.Pagina, marco))
 		}
 	}
 }
@@ -375,7 +389,7 @@ func consultaRead(pid int, marco int) ([]byte, error) {
 		paquete,
 	)
 
-	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco, string(paginaCompleta)))
+	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor Leído: %s.", pid, marco*pageSize, string(paginaCompleta)))
 
 	if len(paginaCompleta) != pageSize {
 		return nil, fmt.Errorf("tamaño de página recibido incorrecto")
@@ -403,7 +417,7 @@ func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error 
 		paqueteLeer,
 	)
 
-	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco, string(paginaCompleta)))
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Acción: Leer - Dirección Física: %d - Valor Leído: %s", pid, marco*pageSize, string(paginaCompleta)))
 
 	if len(paginaCompleta) != pageSize {
 		return fmt.Errorf("no se pudo leer página completa antes de escribir")
@@ -423,14 +437,25 @@ func consultaWrite(pid int, marco int, direccionLogica int, datos []byte) error 
 	}
 	paquete := clientUtils.Paquete{Valores: valores}
 
+	var bytesAEnviar []byte
+	for _, v := range paquete.Valores[3:] {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			// Si algo falla lo reemplazo por un '?'
+			bytesAEnviar = append(bytesAEnviar, '?')
+			continue
+		}
+		bytesAEnviar = append(bytesAEnviar, byte(n))
+	}
+
+	clientUtils.Logger.Info(fmt.Sprintf("PID: %d - Acción: Escribir - Dirección Física: %d - Valor: %s", pid, marco*pageSize, string(bytesAEnviar)))
+
 	clientUtils.EnviarPaquete(
 		globalsCpu.CpuConfig.IpMemory,
 		globalsCpu.CpuConfig.PortMemory,
 		"writePagina",
 		paquete,
 	)
-
-	clientUtils.Logger.Info(fmt.Sprintf("“PID: %d - Acción: Leer - Dirección Física: %d - Valor: %s.", pid, marco, string(datos)))
 
 	return nil
 }

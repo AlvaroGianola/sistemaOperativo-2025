@@ -18,7 +18,7 @@ func AgregarATLB(pid int, pagina int, marco int) {
 
 	if len(globalsCpu.Tlb) < globalsCpu.CpuConfig.TlbEntries {
 		globalsCpu.Tlb = append(globalsCpu.Tlb, entrada)
-		clientUtils.Logger.Info("TLB Add", "PID", pid, "Página", pagina, "Marco", marco)
+		//clientUtils.Logger.Debug("TLB Add", "PID", pid, "Página", pagina, "Marco", marco)
 		return
 	}
 
@@ -34,7 +34,7 @@ func AgregarATLB(pid int, pagina int, marco int) {
 		//clientUtils.Logger.Debug("Se reemplazo la tlb: ", "TLB: ", globalsCpu.Tlb[indice])
 		globalsCpu.Tlb[indice] = entrada
 	}
-	//clientUtils.Logger.Info("TLB Replace", "PID", pid, "Página", pagina, "Marco", marco)
+	//clientUtils.Logger.Debug("TLB Replace", "PID", pid, "Página", pagina, "Marco", marco)
 }
 
 func BuscarEntradaMasVieja() int {
@@ -79,5 +79,5 @@ func LimpiarTLB() {
 	globalsCpu.TlbMutex.Lock()
 	defer globalsCpu.TlbMutex.Unlock()
 	globalsCpu.Tlb = []globalsCpu.EntradaTLB{}
-	//clientUtils.Logger.Info("TLB Cleared")
+	clientUtils.Logger.Info("TLB Cleared")
 }
