@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	cacheUtils "github.com/sisoputnfrba/tp-golang/cpu/cache"
 	globalsCpu "github.com/sisoputnfrba/tp-golang/cpu/globalsCpu"
@@ -308,7 +309,7 @@ func ExecuteInstruccion(proceso *globalsCpu.Proceso, cod_op string, variables []
 	switch cod_op {
 	case NOOP:
 		//clientUtils.Logger.Info("## Ejecutando NOOP")
-		//time.Sleep(2 * time.Second)
+		time.Sleep(2 * time.Second)
 		proceso.Pc++
 		return true
 
