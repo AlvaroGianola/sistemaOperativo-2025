@@ -29,6 +29,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/recibirProceso", cpuUtils.RecibirProceso)
 	mux.HandleFunc("/recibirInterrupcion", cpuUtils.RecibirInterrupcion)
+	mux.HandleFunc("/finSyscallInitProc", cpuUtils.FinSycall)
 
 	// Buscar puerto disponible y levantar servidor
 	listener, puertoLibre, err := clientUtils.EncontrarPuertoDisponible(globalscpu.CpuConfig.IpCpu, globalscpu.CpuConfig.PortCpu)
