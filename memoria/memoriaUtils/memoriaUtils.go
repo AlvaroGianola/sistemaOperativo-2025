@@ -34,7 +34,7 @@ func IniciarConfiguracion(filePath string) *globalsMemoria.Config {
 		panic("Error al decodificar config: " + err.Error())
 	}
 
-	clientUtils.Logger.Info("[Memoria] Configuración de memoria cargada correctamente", "config", config)
+	//clientUtils.Logger.Info("[Memoria] Configuración de memoria cargada correctamente", "config", config)
 
 	// crea el archivo swapfile.bin si no existe
 	//si existe igual lo tengo que truncar a 0
@@ -164,8 +164,16 @@ func FinalizarProceso(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	clientUtils.Logger.Info("Se finaliza el proceso", "PID", pid, "Tamaño", proceso.Size)
-	clientUtils.Logger.Info("Espacio libre en memoria:", "espacio", EspacioLibre())
+	clientUtils.Logger.Info("Se finaliza el proceso",
+		"PID:", pid,
+		"Acc.T.Pag:", proceso.Metricas.AccesosATablas,
+		"Inst.Sol:", proceso.Metricas.InstruccionesSolicitadas,
+		"Swap:", proceso.Metricas.BajadasASwap,
+		"Mem.Prin:", proceso.Metricas.SubidasAMemoria,
+		"Lec.Mem:", proceso.Metricas.LecturasDeMemoria,
+		"Esc.Mem:", proceso.Metricas.EscriturasDeMemoria,
+	)
+	//clientUtils.Logger.Info("Espacio libre en memoria:", "espacio", EspacioLibre())
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -176,7 +184,7 @@ const (
 )
 
 func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para siguiente instuccion recibida desde CPU")
+	//clientUtils.Logger.Info("[Memoria] Petición para siguiente instuccion recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 	pid, err := strconv.Atoi(pedido.Valores[PID])
@@ -218,10 +226,10 @@ func SiguienteInstruccion(w http.ResponseWriter, r *http.Request) {
 }
 
 func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para acceder a un marco de usuario recibida desde CPU")
+	//clientUtils.Logger.Info("[Memoria] Petición para acceder a un marco de usuario recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
-	clientUtils.Logger.Debug("Los valores recibidos en accederMarcoUsuario", "valores: ", pedido.Valores)
+	//clientUtils.Logger.Debug("Los valores recibidos en accederMarcoUsuario", "valores: ", pedido.Valores)
 
 	if len(pedido.Valores) < 3 {
 		clientUtils.Logger.Error("Error: paquete con cantidad insuficiente de valores")
@@ -250,18 +258,7 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 		clientUtils.Logger.Info("Entrada de tabla recibida", "nivel", i, "valor", valor)
 		movimientos = append(movimientos, valor)
 	}
-	clientUtils.Logger.Debug("Movimientos: ", "movimientos", movimientos)
-
-	// Parsear desplazamiento (último valor)
-	desplazamientoStr := pedido.Valores[len(pedido.Valores)-1]
-	desplazamiento, err := strconv.Atoi(desplazamientoStr)
-	clientUtils.Logger.Debug("Desplazamiento: ", "desplazamiento", desplazamiento)
-	if err != nil {
-		clientUtils.Logger.Error("Error al parsear desplazamiento", "valor", desplazamientoStr)
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
-	}
-	clientUtils.Logger.Debug("Desplazamiento recibido", "valor", desplazamiento)
+	//clientUtils.Logger.Debug("Movimientos: ", "movimientos", movimientos)
 
 	// Buscar proceso
 	proceso := buscarProceso(pid)
@@ -315,14 +312,14 @@ func AccederMarcoUsuario(w http.ResponseWriter, r *http.Request) {
 	}
 	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 	direccionFisica := pagina.Marco
-	clientUtils.Logger.Info("Marco de usuario accedido", "pid", pid, "marco", direccionFisica)
+	//clientUtils.Logger.Info("Marco de usuario accedido", "pid", pid, "marco", direccionFisica)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(strconv.Itoa(direccionFisica)))
 }
 
 func LeerPagina(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para leer una página recibida desde CPU")
+	//clientUtils.Logger.Info("[Memoria] Petición para leer una página recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 	if len(pedido.Valores) < 3 {
@@ -376,7 +373,7 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 	copy(contenido, globalsMemoria.MemoriaUsuario[inicio:fin])
 
 	proceso.Metricas.LecturasDeMemoria++
-	clientUtils.Logger.Info("Página leída", "pid", pid, "marco", marco)
+	//clientUtils.Logger.Info("Página leída", "pid", pid, "marco", marco)
 
 	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 
@@ -385,7 +382,7 @@ func LeerPagina(w http.ResponseWriter, r *http.Request) {
 }
 
 func EscribirPagina(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para escribir una página recibida desde CPU")
+	//clientUtils.Logger.Info("[Memoria] Petición para escribir una página recibida desde CPU")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 	if len(pedido.Valores) < 3 {
@@ -460,18 +457,18 @@ func EscribirPagina(w http.ResponseWriter, r *http.Request) {
 
 	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 
-	clientUtils.Logger.Info("Página escrita", "pid", pid, "marco", marco)
+	clientUtils.Logger.Info("Página escrita", "pid", pid, "marco", marco, "tamaño", tamanioEnviado)
 
 	w.WriteHeader(http.StatusOK)
 }
 
 func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para leer dirección física recibida desde CPU")
+	//clientUtils.Logger.Info("[Memoria] Petición para leer dirección física recibida desde CPU")
 	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 
-	clientUtils.Logger.Debug("Los valores recibidos en leerDireccionFisica", "valores: ", pedido.Valores)
+	//clientUtils.Logger.Debug("Los valores recibidos en leerDireccionFisica", "valores: ", pedido.Valores)
 
 	pid, err := strconv.Atoi(pedido.Valores[0])
 	if err != nil {
@@ -497,18 +494,19 @@ func LeerDireccionFisica(w http.ResponseWriter, r *http.Request) {
 	// Simulamos la escritura de la dirección física
 	proceso.Metricas.LecturasDeMemoria++
 
+	clientUtils.Logger.Info("Lectura de dirección física", "pid", pid, "direccion_fisica", direccionFisica, "contenido", contenido)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte{contenido})
 
 }
 
 func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para escribir dirección física recibida desde CPU")
+	//clientUtils.Logger.Info("[Memoria] Petición para escribir dirección física recibida desde CPU")
 	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.MemoryDelay) * time.Millisecond)
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 
-	clientUtils.Logger.Debug("Los valores recibidos en escribirDireccionFisica", "valores: ", pedido.Valores)
+	//clientUtils.Logger.Debug("Los valores recibidos en escribirDireccionFisica", "valores: ", pedido.Valores)
 
 	pid, err := strconv.Atoi(pedido.Valores[0])
 	if err != nil {
@@ -529,7 +527,7 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	// ✅ Esta parte es clave:
+	// Esta parte es clave:
 	valorNumerico, err := strconv.Atoi(pedido.Valores[2])
 	if err != nil {
 		clientUtils.Logger.Error("Error al parsear valor a byte")
@@ -540,6 +538,7 @@ func EscribirDireccionFisica(w http.ResponseWriter, r *http.Request) {
 
 	proceso.Metricas.EscriturasDeMemoria++
 	globalsMemoria.MemoriaUsuario[direccionFisica] = contenido
+	clientUtils.Logger.Info("Escritura en dirección física", "pid", pid, "direccion_fisica", direccionFisica)
 
 	w.WriteHeader(http.StatusOK)
 
@@ -549,7 +548,7 @@ func ObtenerConfiguracionMemoria(w http.ResponseWriter, r *http.Request) {
 	//esto es lo que pide cpu para saber tamaño de pagina, cantidad de niveles, etc que esta en mi config
 
 	//hacer un json que tenga los tres datos y enviarlo
-	clientUtils.Logger.Info("[Memoria] Petición para obtener configuración de memoria recibida desde CPU")
+	//clientUtils.Logger.Info("[Memoria] Petición para obtener configuración de memoria recibida desde CPU")
 	configuracion := struct {
 		TamanioPagina    int `json:"tamanioPagina"`
 		Niveles          int `json:"niveles"`
@@ -573,7 +572,7 @@ func ObtenerConfiguracionMemoria(w http.ResponseWriter, r *http.Request) {
 }
 
 func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para suspender proceso recibida desde Kernel")
+	//clientUtils.Logger.Info("[Memoria] Petición para suspender proceso recibida desde Kernel")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 	if len(pedido.Valores) < 1 {
@@ -633,7 +632,7 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	liberarTabla(&proceso.TablaPaginasGlobal, 1)
 
 	proceso.Metricas.BajadasASwap++
-	clientUtils.Logger.Info("Proceso suspendido", "pid", pid, "bytes_escritos", len(paginas), "offset", offset)
+	//clientUtils.Logger.Info("Proceso suspendido", "pid", pid, "bytes_escritos", len(paginas), "offset", offset)
 
 	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.SwapDelay) * time.Millisecond)
 
@@ -642,7 +641,7 @@ func SuspenderProceso(w http.ResponseWriter, r *http.Request) {
 }
 
 func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
-	clientUtils.Logger.Info("[Memoria] Petición para desuspender proceso recibida desde Kernel")
+	//clientUtils.Logger.Info("[Memoria] Petición para desuspender proceso recibida desde Kernel")
 
 	pedido := serverUtils.RecibirPaquetes(w, r)
 	pid, err := strconv.Atoi(pedido.Valores[0])
@@ -653,7 +652,7 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proceso := buscarProceso(pid)
-	clientUtils.Logger.Debug("Proceso para desuspender encontrado", "pid", pid)
+	//clientUtils.Logger.Debug("Proceso para desuspender encontrado", "pid", pid)
 	if proceso == nil {
 		clientUtils.Logger.Error("Proceso no encontrado:", "pid especifico", pid)
 		http.Error(w, "PID no existe", http.StatusNotFound)
@@ -693,13 +692,13 @@ func DesuspenderProceso(w http.ResponseWriter, r *http.Request) {
 
 	time.Sleep(time.Duration(globalsMemoria.MemoriaConfig.SwapDelay) * time.Millisecond)
 
-	clientUtils.Logger.Info("Proceso desuspendido exitosamente:", "pid", pid)
+	//clientUtils.Logger.Info("Proceso desuspendido exitosamente:", "pid", pid)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Proceso desuspendido exitosamente"))
 
 }
 func reAsignarMemoria(pid int, contenidoTotal []byte, size int) bool {
-	clientUtils.Logger.Info("Reasignando memoria al proceso", "pid", pid, "tamaño", len(contenidoTotal))
+	//clientUtils.Logger.Info("Reasignando memoria al proceso", "pid", pid, "tamaño", len(contenidoTotal))
 
 	if pid < 0 {
 		return false
@@ -709,7 +708,7 @@ func reAsignarMemoria(pid int, contenidoTotal []byte, size int) bool {
 		return false
 	}
 	// Si hay concurrencia en ProcesosEnMemoria, deberías protegerlo con mutex.
-	clientUtils.Logger.Debug("Espacio libre disponible", "espacio", EspacioLibre())
+	//clientUtils.Logger.Debug("Espacio libre disponible", "espacio", EspacioLibre())
 
 	proceso := buscarProceso(pid)
 	if proceso == nil {
@@ -717,7 +716,7 @@ func reAsignarMemoria(pid int, contenidoTotal []byte, size int) bool {
 
 		return false
 	}
-	clientUtils.Logger.Debug("Proceso encontrado", "pid", pid, "tamaño", proceso.Size)
+	//clientUtils.Logger.Debug("Proceso encontrado", "pid", pid, "tamaño", proceso.Size)
 	pageSize := globalsMemoria.MemoriaConfig.PageSize
 	numLevels := globalsMemoria.MemoriaConfig.NumberOfLevels
 
@@ -760,7 +759,7 @@ func reAsignarMemoria(pid int, contenidoTotal []byte, size int) bool {
 	//  limpiar la entradas swap
 	globalsMemoria.MutexTablaSwap.Lock()
 	delete(globalsMemoria.TablaSwap, pid)
-	clientUtils.Logger.Debug("Tabla de swap limpiada para el proceso", "pid", pid)
+	//clientUtils.Logger.Debug("Tabla de swap limpiada para el proceso", "pid", pid)
 	globalsMemoria.MutexTablaSwap.Unlock()
 	return true
 }
@@ -847,7 +846,7 @@ func buscarProceso(pid int) *globalsMemoria.Proceso {
 }
 
 func countMarcosLibres() int {
-	clientUtils.Logger.Info("Contando marcos libres")
+	//clientUtils.Logger.Info("Contando marcos libres")
 	globalsMemoria.MutexContadorMarcosLibres.Lock()
 	defer globalsMemoria.MutexContadorMarcosLibres.Unlock()
 
@@ -861,7 +860,7 @@ func countMarcosLibres() int {
 }
 
 func asignarMemoria(pid int, instrucciones []string, size int) bool {
-	clientUtils.Logger.Info("Asignando memoria al proceso", "pid", pid, "tamaño", size)
+	//clientUtils.Logger.Info("Asignando memoria al proceso", "pid", pid, "tamaño", size)
 	pageSize := globalsMemoria.MemoriaConfig.PageSize
 	numLevels := globalsMemoria.MemoriaConfig.NumberOfLevels
 
@@ -936,7 +935,7 @@ func insertarPaginaEnJerarquia(tabla *globalsMemoria.TablaPaginas, pagina *globa
 			actual.Entradas[indice] = tablaPtr
 			actual = tablaPtr
 
-			clientUtils.Logger.Debug("Creada nueva tabla en nivel", "nivel", nivel, "indice", indice)
+			//clientUtils.Logger.Debug("Creada nueva tabla en nivel", "nivel", nivel, "indice", indice)
 		} else {
 			tablaExistente, esTabla := siguiente.(*globalsMemoria.TablaPaginas)
 			if !esTabla {
@@ -955,12 +954,8 @@ func insertarPaginaEnJerarquia(tabla *globalsMemoria.TablaPaginas, pagina *globa
 		return true
 	}
 
-	if _, yaExiste := actual.Entradas[indiceFinal].(*globalsMemoria.Pagina); yaExiste {
-		clientUtils.Logger.Warn("Ya había una página en este índice, será sobrescrita", "indiceFinal", indiceFinal)
-	}
-
 	actual.Entradas[indiceFinal] = pagina
-	clientUtils.Logger.Debug("Página insertada correctamente", "pagina", pagina.Marco, "indiceFinal", indiceFinal, "nroPagina", nroPagina, "nivel", niveles, "tipo de entrada", reflect.TypeOf(actual.Entradas[indiceFinal]))
+	//clientUtils.Logger.Debug("Página insertada correctamente", "pagina", pagina.Marco, "indiceFinal", indiceFinal, "nroPagina", nroPagina, "nivel", niveles, "tipo de entrada", reflect.TypeOf(actual.Entradas[indiceFinal]))
 
 	return false
 }
@@ -982,7 +977,7 @@ func calcularIndice(nroPagina, nivel int) int {
 }
 
 func buscarMarcoLibre() int {
-	clientUtils.Logger.Debug("Buscando marco libre")
+	//clientUtils.Logger.Debug("Buscando marco libre")
 	globalsMemoria.MutexBitmapMarcosLibres.Lock()
 	defer globalsMemoria.MutexBitmapMarcosLibres.Unlock()
 	if countMarcosLibres() > 0 {
