@@ -1,13 +1,13 @@
 {
-    "ip_memory": "127.0.0.1",
+    "ip_memory": "192.168.1.1",
     "port_memory": 8002,
-    "ip_kernel": "127.0.0.1",
+    "ip_kernel": "192.168.1.1",
     "port_kernel": 8001,
-    "scheduler_algorithm": "SRT",
-    "ready_ingress_algorithm": "PMCP",
-    "alpha": 0.75,
-    "initial_estimate": 100,
-    "suspension_time": 3000,
+    "scheduler_algorithm": "FIFO",
+    "ready_ingress_algorithm": "FIFO",
+    "alpha": 1,
+    "initial_estimate": 1000,
+    "suspension_time": 120000,
     "log_level": "DEBUG"
 }
 

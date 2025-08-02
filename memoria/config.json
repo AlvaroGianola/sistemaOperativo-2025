@@ -2,17 +2,17 @@
 
 {
     "port_memory": 8002,
-    "ip_memory": "127.0.0.1",
+    "ip_memory": "192.168.1.1",
     "memory_size": 4096,
-    "page_size": 32,
-    "entries_per_page": 8,
-    "number_of_levels": 3,
-    "memory_delay": 100,
-    "swapfile_path": "/home/valentin/facultad/revenge-of-the-cth-pruebas/swapfile.bin",
-    "swap_delay": 2500,
+    "page_size": 64,
+    "entries_per_page": 4,
+    "number_of_levels": 2,
+    "memory_delay": 500,
+    "swapfile_path": "/home/utnso/tp-2025-1c-LaBestiaDeCalchin/swapfile.bin",
+    "swap_delay": 15000,
     "log_level": "DEBUG",
-    "dump_path": "/home/valentin/facultad/revenge-of-the-cth-pruebas/",
-    "scripts_path": "/home/valentin/facultad/revenge-of-the-cth-pruebas/"
+    "dump_path": "/home/utnso/tp-2025-1c-LaBestiaDeCalchin/",
+    "scripts_path": "/home/utnso/revenge-of-the-cth-pruebas/"
 }
 
 
